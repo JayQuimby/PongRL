@@ -54,12 +54,10 @@ class Ball:
         if self.vx < 4:
             self.vx /= (abs(self.vx)/4)
 
-    def collides(self):
-        return super().collides()
-
     def velocity(self):
         return math.hypot(self.vx, self.vy)
 
     def draw(self, screen):
         pygame.draw.circle(screen, WHITE, (self.x, self.y), BALL_RADIUS)
-        pygame.draw.rect(screen, (0,0,0), (self.x, self.y, 2, 2))
+        pygame.draw.circle(screen, (215,35,245), (self.x, self.y), 5)
+        

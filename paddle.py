@@ -6,7 +6,6 @@ from global_vars import (
     SCREEN_HEIGHT,
     PADDLE_WIDTH,
     BALL_RADIUS,
-    BALL_SPEED_INCREMENT,
 )
 
 max_bounce_angle = math.radians(60)
@@ -23,9 +22,11 @@ class Paddle:
         
         for key, value in config.items():
             setattr(self, key, value)
-
         self.h2 = PADDLE_HEIGHT // 2
         self.w2 = PADDLE_WIDTH // 2
+        self.reset()
+
+    def reset(self):
         self.y = SCREEN_HEIGHT // 2
 
     def collides(self, other):
@@ -41,4 +42,4 @@ class Paddle:
 
     def draw(self, screen):
         pygame.draw.rect(screen, self.color, (self.x - self.w2, self.y - self.h2, PADDLE_WIDTH, PADDLE_HEIGHT))
-        pygame.draw.rect(screen, (0,0,0), (self.x, self.y, 2, 2))
+        pygame.draw.circle(screen, (0,0,0), (self.x, self.y), 5)

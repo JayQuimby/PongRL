@@ -35,10 +35,10 @@ class Obstacle:
     def collides(self, other):
         left = self.x - self.w2
         right = self.x + self.w2
-        top = self.y + self.h2 + self.h2
-        bot = self.y - self.h2 - self.h2
+        top = self.y + self.h2
+        bot = self.y - self.h2
         horiz = (left < other.x + other.w2 < right) | (left < other.x - other.w2 < right)
-        vert = (bot < other.y < top) | (bot < other.y < top)
+        vert = (bot < other.y + other.h2 < top) | (bot < other.y - other.h2 < top)
         return  horiz & vert
 
     def move(self):
@@ -46,14 +46,32 @@ class Obstacle:
         self.y += self.vy
         self.x += self.vx
 
-        if self.y - self.h2 <= 0 or self.y + self.h2 >= SCREEN_HEIGHT:
-            self.x += 5 * -(self.y > SCREEN_HEIGHT//2)
-            self.vy *= -1
+        #check too low
+        if self.y - self.h2 <= 0:
+            self.x += 5
+            if self.vy < 0:
+                self.vy *= -1 
             self.vx *= (1 + random.random()) * 2 / 4
 
-        if self.x - self.w2 < SCREEN_WIDTH // 2 - OBSTACLE_SPREAD or self.x + self.w2 > SCREEN_WIDTH // 2 + OBSTACLE_SPREAD:
-            self.x += 5 * -(self.x > SCREEN_WIDTH//2)
-            self.vx *= -1
+        # check too high
+        if self.y + self.h2 >= SCREEN_HEIGHT:
+            self.x -= 5 
+            if self.vy > 0:
+                self.vy *= -1 
+            self.vx *= (1 + random.random()) * 2 / 4
+
+        #check too far left
+        if self.x - self.w2 < SCREEN_WIDTH // 2 - OBSTACLE_SPREAD:
+            #self.x += 5
+            if self.vx < 0:
+                self.vx *= -1
+            self.vy *= (1 + random.random()) * 2 / 4
+
+        #check too far right
+        if self.x + self.w2 > SCREEN_WIDTH // 2 + OBSTACLE_SPREAD:
+            #self.x -= 5
+            if self.vx > 0:
+                self.vx *= -1
             self.vy *= (1 + random.random()) * 2 / 4
 
         if self.vx < 2:
@@ -64,4 +82,4 @@ class Obstacle:
 
     def draw(self, screen):
         pygame.draw.rect(screen, RED, (self.x - self.w2, self.y - self.h2, OBSTACLE_WIDTH, OBSTACLE_HEIGHT))
-        pygame.draw.rect(screen, (0,0,0), (self.x, self.y, 2, 2))
+        pygame.draw.circle(screen, (0,0,0), (self.x, self.y), 5)
