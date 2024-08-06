@@ -13,6 +13,8 @@ from global_vars import (
 class Ball:
     def __init__(self):
         self.reset()
+        self.w2 = BALL_RADIUS
+        self.h2 = BALL_RADIUS
 
     def reset(self):
         self.x = SCREEN_WIDTH // 2

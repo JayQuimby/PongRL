@@ -86,20 +86,23 @@ class Game:
             self.ball.vx, self.ball.vy = calculate_new_velocity(self.ball.y, self.right_paddle.y, ball_speed)
             self.ball.vx = -abs(self.ball.vx)  # Ensure the ball moves left
 
+        ball_speed = math.hypot(self.ball.vx, self.ball.vy) * OBSTACLE_FRICTION
         # Ball collision with obstacles
-        ow2 = OBSTACLE_WIDTH // 2
-        oh2 = OBSTACLE_HEIGHT // 2
+
         for obstacle in self.obstacles:
-            if (obstacle.x - ow2 <= self.ball.x + BALL_RADIUS <= obstacle.x + ow2 and
-                obstacle.y - oh2 <= self.ball.y <= obstacle.y + oh2):
-                self.ball.vx *= -OBSTACLE_FRICTION
-                self.ball.vy *= -OBSTACLE_FRICTION
+            if obstacle.collides(self.ball):
+                self.ball.vx, self.ball.vy = calculate_new_velocity(self.ball.y, obstacle.y, ball_speed)
 
         # Ball out of bounds
         if self.ball.x < 0 or self.ball.x > SCREEN_WIDTH:
             self.ball.reset()
             self.left_paddle.y = SCREEN_HEIGHT // 2
             self.right_paddle.y = SCREEN_HEIGHT // 2
+        
+        if self.ball.y < BALL_RADIUS:
+            self.ball.y = BALL_RADIUS + 2
+        if self.ball.y > SCREEN_HEIGHT - BALL_RADIUS:
+            self.ball.y = SCREEN_HEIGHT - BALL_RADIUS - 2
 
     def redraw_screen(self):
         # Drawing
