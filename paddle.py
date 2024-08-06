@@ -6,6 +6,7 @@ from global_vars import (
     SCREEN_HEIGHT,
     PADDLE_WIDTH,
     BALL_RADIUS,
+    RED
 )
 
 max_bounce_angle = math.radians(60)
@@ -19,7 +20,7 @@ class Paddle:
         self.bounciness = 0
         self.slipperiness = 0
         self.color = (0,0,0)
-        
+        self.hit = False
         for key, value in config.items():
             setattr(self, key, value)
         self.h2 = PADDLE_HEIGHT // 2
@@ -41,5 +42,5 @@ class Paddle:
         self.y = max(self.h2, min(SCREEN_HEIGHT - self.h2, self.y))
 
     def draw(self, screen):
-        pygame.draw.rect(screen, self.color, (self.x - self.w2, self.y - self.h2, PADDLE_WIDTH, PADDLE_HEIGHT))
+        pygame.draw.rect(screen, self.color if not self.hit else RED, (self.x - self.w2, self.y - self.h2, PADDLE_WIDTH, PADDLE_HEIGHT))
         pygame.draw.circle(screen, (0,0,0), (self.x, self.y), 5)

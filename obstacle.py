@@ -4,11 +4,9 @@ import math
 from global_vars import (
     SCREEN_WIDTH,
     SCREEN_HEIGHT,
-    OBSTACLE_HEIGHT,
-    OBSTACLE_WIDTH,
+    OBSTACLE_RADIUS,
     OBSTACLE_SPREAD,
-    RED,
-    BALL_RADIUS
+    RED
 )
 
 class Obstacle:
@@ -18,12 +16,11 @@ class Obstacle:
         self.vx = 0
         self.vy = 0
         self.mass = 0
-        self.bounciness = 0
-        self.slipperiness = 0
+
         for key, value in config.items():
             setattr(self, key, value)
-        self.h2 = OBSTACLE_HEIGHT // 2
-        self.w2 = OBSTACLE_WIDTH // 2
+        self.h2 = OBSTACLE_RADIUS
+        self.w2 = OBSTACLE_RADIUS
         self.reset()
         
     def reset(self):
@@ -42,7 +39,6 @@ class Obstacle:
         return  horiz & vert
 
     def move(self):
-
         self.y += self.vy
         self.x += self.vx
 
@@ -81,5 +77,5 @@ class Obstacle:
         return math.hypot(self.vx, self.vy)
 
     def draw(self, screen):
-        pygame.draw.rect(screen, RED, (self.x - self.w2, self.y - self.h2, OBSTACLE_WIDTH, OBSTACLE_HEIGHT))
-        pygame.draw.circle(screen, (0,0,0), (self.x, self.y), 5)
+        pygame.draw.circle(screen, RED, (self.x, self.y), OBSTACLE_RADIUS)
+        pygame.draw.circle(screen, (0,0,0), (self.x, self.y), 10)

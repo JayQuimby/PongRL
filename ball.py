@@ -31,7 +31,7 @@ class Ball:
         self.x = SCREEN_WIDTH // 2
         self.y = SCREEN_HEIGHT // 2
         self.vx = random.choice([-4, 4])
-        self.vy = random.choice([-2, 2])
+        self.vy = random.choice([-1, 1])
 
     def move(self):
         if abs(self.vx) < BALL_MAX_SPEED:
@@ -44,9 +44,14 @@ class Ball:
         else:
             self.vy /= 2
 
-        if self.y - BALL_RADIUS <= 0 or self.y + BALL_RADIUS >= SCREEN_HEIGHT:
-            self.vy *= -1
-        
+        if self.y - BALL_RADIUS <= 0:
+            if self.vy < 0:
+                self.vy *= -1
+
+        if self.y + BALL_RADIUS >= SCREEN_HEIGHT:
+            if self.vy > 0:
+                self.vy *= -1
+
         if self.velocity() < 2:
             self.vx /= abs(self.vx)
             self.vy /= abs(self.vy)

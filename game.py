@@ -56,24 +56,10 @@ def collide(obj1, obj2, momentum_factor=1.5, size_speed_factor=1.5, min_speed=2.
     obj2.vx += impulse_x / obj2.mass * size_multiplier2
     obj2.vy += impulse_y / obj2.mass * size_multiplier2
 
-    # Clamp velocities
-    obj1.vx = max(min(obj1.vx, max_speed), -max_speed)
-    obj1.vy = max(min(obj1.vy, max_speed), -max_speed)
-    obj2.vx = max(min(obj2.vx, max_speed), -max_speed)
-    obj2.vy = max(min(obj2.vy, max_speed), -max_speed)
-
-    # Ensure minimum speed
-    for obj in (obj1, obj2):
-        speed = math.sqrt(obj.vx**2 + obj.vy**2)
-        if speed < min_speed:
-            scale = min_speed / speed
-            obj.vx *= scale
-            obj.vy *= scale
-
 class Game:
     def __init__(self, **config):
         self.config = config
-        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT + 100))
         pygame.display.set_caption('Self play simulation')
 
         self.clock = pygame.time.Clock()
@@ -101,16 +87,24 @@ class Game:
 
     def get_ai_moves(self):
         bh = self.ball.y
-        fbh = self.ball.vy * 8 + bh
+        vl = self.ball.vy
+        fbh = bh + vl * (vl//2)
         lph = self.left_paddle.y
         rph = self.right_paddle.y
-        buffer = 40
-        self.left_paddle.vy += PADDLE_VEL * (-(lph + buffer > fbh) + (lph -buffer < fbh))
-        self.right_paddle.vy += PADDLE_VEL * (-(rph + buffer > bh) + (rph -buffer < bh))
+        buffer = PADDLE_HEIGHT // 4
+        if self.ball.vx < 0 and self.ball.x < SCREEN_WIDTH//2:
+            self.left_paddle.vy += PADDLE_VEL * (-(lph + buffer > fbh) + (lph -buffer < fbh))
+        else:
+            self.left_paddle.vy += PADDLE_VEL * min(1, max(-1, (SCREEN_HEIGHT//2 - self.left_paddle.y)//10))
+
+        if self.ball.vx > 0 and self.ball.x > SCREEN_WIDTH//2:
+            self.right_paddle.vy += PADDLE_VEL * (-(rph + buffer > fbh) + (rph -buffer < fbh))
+        else:
+            self.right_paddle.vy += PADDLE_VEL * min(1, max(-1, (SCREEN_HEIGHT//2 - self.right_paddle.y)//10))
 
     def move_objects(self):
-        self.left_paddle.vy *= .9
-        self.right_paddle.vy *= .9
+        self.left_paddle.vy *= PADDLE_MOVE_DECAY
+        self.right_paddle.vy *= PADDLE_MOVE_DECAY
         if self.config['players']:
             self.get_player_moves()
         else:
@@ -141,13 +135,21 @@ class Game:
     def detect_collision(self):
         # Collision with left paddle
         if self.left_paddle.collides(self.ball):
+            self.left_paddle.hit = True
             collide(self.left_paddle, self.ball)
-            self.ball.vx = max(2, abs(self.ball.vx))
+            self.ball.vx = max(2, abs(self.ball.vx)) * VELO_MULT
+            self.ball.x = self.left_paddle.x + self.left_paddle.w2 + self.ball.h2
+        else:
+            self.left_paddle.hit = False
 
         # Collision with right paddle
         if self.right_paddle.collides(self.ball):
+            self.right_paddle.hit = True
             collide(self.right_paddle, self.ball)
-            self.ball.vx = -max(2, abs(self.ball.vx))
+            self.ball.vx = -max(2, abs(self.ball.vx)) * VELO_MULT
+            self.ball.x = self.right_paddle.x - self.right_paddle.w2 - self.ball.h2
+        else:
+            self.right_paddle.hit = False
 
         for i, obstacle in enumerate(self.obstacles):
             if obstacle.collides(self.ball):
@@ -177,6 +179,8 @@ class Game:
 
         pygame.draw.rect(self.screen, (255,255,255), (SCREEN_WIDTH // 2 - OBSTACLE_SPREAD, 0, 1, SCREEN_HEIGHT))
         pygame.draw.rect(self.screen, (255,255,255), (SCREEN_WIDTH // 2 + OBSTACLE_SPREAD, 0, 1, SCREEN_HEIGHT))
+        pygame.draw.rect(self.screen, (255,255,255), (0, SCREEN_HEIGHT, SCREEN_WIDTH, 1))
+        pygame.draw.rect(self.screen, (255,255,255), (0, SCREEN_HEIGHT + 40, SCREEN_WIDTH, 1))
 
     def display_variables(self, score):
         ball_position_text = font.render(f'Ball Position: ({self.ball.x//10*10}, {self.ball.y//10*10})', True, WHITE)
@@ -185,11 +189,11 @@ class Game:
         right_paddle_text = font.render(f'Right Paddle Y: {rr(self.right_paddle.y)}', True, WHITE)
         score_text = big_font.render(f'P1: {score["p1"]} | P2: {score["p2"]}', True, WHITE)
 
-        self.screen.blit(ball_position_text, (SCREEN_WIDTH//2 - 100, SCREEN_HEIGHT - 40))
-        self.screen.blit(ball_velocity_text, (SCREEN_WIDTH//2 - 100, SCREEN_HEIGHT - 80))
-        self.screen.blit(score_text, (SCREEN_WIDTH//2 - 50, 10))
-        self.screen.blit(left_paddle_text, (10, 10))
-        self.screen.blit(right_paddle_text, (SCREEN_WIDTH - 300, 10))
+        self.screen.blit(ball_position_text, (SCREEN_WIDTH//2 + 50, SCREEN_HEIGHT + 10))
+        self.screen.blit(ball_velocity_text, (SCREEN_WIDTH//2 - 210, SCREEN_HEIGHT + 10))
+        self.screen.blit(score_text, (SCREEN_WIDTH//2 - 70, SCREEN_HEIGHT + 55))
+        self.screen.blit(left_paddle_text, (10, SCREEN_HEIGHT + 10))
+        self.screen.blit(right_paddle_text, (SCREEN_WIDTH - 210, SCREEN_HEIGHT + 10))
 
     def step(self, score):
         for event in pygame.event.get():
@@ -209,7 +213,7 @@ class Game:
         while self.running:
             score = self.step(score)     
             pygame.display.flip()
-            self.clock.tick(60)
+            self.clock.tick(144)
         pygame.quit()
 
 if __name__ == "__main__":
