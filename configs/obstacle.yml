@@ -1,0 +1,7 @@
+x: 1000
+y: 1000
+vx: 0
+vy: 0
+mass: 500
+bounciness: 1
+slipperiness: 0.8

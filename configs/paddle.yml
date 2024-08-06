@@ -1,0 +1,8 @@
+x: 1000
+y: 1000
+vx: 0
+vy: 0
+mass: 99999999999999
+bounciness: 2.0
+slipperiness: 0.0
+color: (255, 87, 51)
