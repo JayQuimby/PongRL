@@ -1,55 +1,58 @@
-import tensorflow as tf
 import numpy as np
-import random
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
 from collections import deque
+import random
 
-class PongAgent:
-    def __init__(self, state_size, action_size):
-        self.state_size = state_size
-        self.action_size = action_size
-        self.memory = deque(maxlen=2000)
-        self.gamma = 0.95    # discount rate
-        self.epsilon = 1.0   # exploration rate
-        self.epsilon_min = 0.01
-        self.epsilon_decay = 0.995
-        self.learning_rate = 0.001
+# Hyperparameters
+STATE_SIZE = 6
+ACTION_SIZE = 3
+GAMMA = 0.95
+LEARNING_RATE = 0.001
+MEMORY_SIZE = 2000
+BATCH_SIZE = 32
+EPSILON_DECAY = 0.995
+MIN_EPSILON = 0.01
+
+class DQNAgent:
+    def __init__(self):
+        self.memory = deque(maxlen=MEMORY_SIZE)
+        self.epsilon = 1.0
         self.model = self._build_model()
-        self.target_model = self._build_model()
-        self.update_target_model()
 
     def _build_model(self):
-        model = tf.keras.Sequential([
-            tf.keras.layers.Dense(24, input_dim=self.state_size, activation='relu'),
-            tf.keras.layers.Dense(24, activation='relu'),
-            tf.keras.layers.Dense(self.action_size, activation='linear')
-        ])
-        model.compile(loss='mse', optimizer=tf.keras.optimizers.Adam(lr=self.learning_rate))
+        model = Sequential()
+        model.add(Dense(24, input_dim=STATE_SIZE, activation='relu'))
+        model.add(Dense(24, activation='relu'))
+        model.add(Dense(ACTION_SIZE, activation='sigmoid'))
+        model.compile(loss='mse', optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE))
         return model
-
-    def update_target_model(self):
-        self.target_model.set_weights(self.model.get_weights())
 
     def remember(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
 
     def act(self, state):
         if np.random.rand() <= self.epsilon:
-            return random.randrange(self.action_size)
+            return random.randrange(ACTION_SIZE)
         act_values = self.model.predict(state)
         return np.argmax(act_values[0])
 
-    def replay(self, batch_size):
-        minibatch = random.sample(self.memory, batch_size)
+    def replay(self):
+        if len(self.memory) < BATCH_SIZE:
+            return
+
+        minibatch = random.sample(self.memory, BATCH_SIZE)
         for state, action, reward, next_state, done in minibatch:
-            target = self.model.predict(state)
-            if done:
-                target[0][action] = reward
-            else:
-                t = self.target_model.predict(next_state)[0]
-                target[0][action] = reward + self.gamma * np.amax(t)
-            self.model.fit(state, target, epochs=1, verbose=0)
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
+            target = reward
+            if not done:
+                target = reward + GAMMA * np.amax(self.model.predict(next_state)[0])
+            target_f = self.model.predict(state)
+            target_f[0][action] = target
+            self.model.fit(state, target_f, epochs=1, verbose=0)
+
+        if self.epsilon > MIN_EPSILON:
+            self.epsilon *= EPSILON_DECAY
 
     def load(self, name):
         self.model.load_weights(name)
@@ -57,43 +60,28 @@ class PongAgent:
     def save(self, name):
         self.model.save_weights(name)
 
-def preprocess_state(state):
-    return np.reshape(list(state.values()), [1, 8])
+# Main training function
+if __name__ == "__main__":
+    agent = DQNAgent()
 
-def train_agent(episodes, batch_size=32):
-    from game import run_game, get_game_state  # Import the game functions
+    # Add your game loop here to train the agent
+    # The loop should involve initializing the game state, getting the state, choosing an action, and then applying the DQN agent logic
 
-    state_size = 8  # Number of input parameters
-    action_size = 3  # Up, Down, Stay
-    agent = PongAgent(state_size, action_size)
+    for e in range(1000):  # Number of episodes
+        # Reset the game to start a new episode
+        state = np.reshape(initial_state(), [1, STATE_SIZE])  # initial_state() should return the initial state of the game
 
-    for e in range(episodes):
-        state = preprocess_state(get_game_state())
-        for time in range(500):  # Limit the number of steps per episode
+        for time in range(500):  # Max time steps per episode
             action = agent.act(state)
-            # Run one frame of the game and get the new state
-            next_state, reward, done = run_game(lambda x: action)
-            next_state = preprocess_state(next_state)
-            
-            # Reward shaping: You might want to adjust this based on the game outcome
-            reward = reward if not done else -10
-
+            next_state, reward, done = step(action)  # step() should return next_state, reward, done after taking the action
+            next_state = np.reshape(next_state, [1, STATE_SIZE])
             agent.remember(state, action, reward, next_state, done)
             state = next_state
 
             if done:
-                agent.update_target_model()
-                print(f"episode: {e}/{episodes}, score: {time}, e: {agent.epsilon:.2}")
+                print(f"Episode {e+1}/{1000} finished after {time+1} timesteps")
                 break
-            
-            if len(agent.memory) > batch_size:
-                agent.replay(batch_size)
 
-        if e % 10 == 0:
-            agent.save(f"pong_agent_{e}.h5")
-
-    return agent
-
-if __name__ == "__main__":
-    trained_agent = train_agent(episodes=1000)
-    trained_agent.save("final_pong_agent.h5")
+        agent.replay()
+        if e % 50 == 0:
+            agent.save(f"pong-dqn-{e}.h5")

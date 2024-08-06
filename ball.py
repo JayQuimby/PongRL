@@ -1,9 +1,11 @@
 import pygame
 import random
+
 from global_vars import (
     SCREEN_WIDTH,
     SCREEN_HEIGHT,
     BALL_RADIUS,
+    BALL_MAX_SPEED,
     WHITE
 )
 
@@ -19,8 +21,11 @@ class Ball:
         self.vy = random.choice([-2, 2])
 
     def move(self):
-        self.x += self.vx
-        self.y += self.vy
+        if abs(self.vx) < BALL_MAX_SPEED:
+            self.x += self.vx
+
+        if abs(self.vy) < BALL_MAX_SPEED:
+            self.y += self.vy
 
         if self.y - BALL_RADIUS <= 0 or self.y + BALL_RADIUS >= SCREEN_HEIGHT:
             self.vy *= -1

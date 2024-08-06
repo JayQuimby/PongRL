@@ -5,7 +5,8 @@ from global_vars import (
     SCREEN_HEIGHT,
     OBSTACLE_HEIGHT,
     OBSTACLE_WIDTH,
-    RED
+    OBSTACLE_SPREAD,
+    RED,
 )
 
 class Obstacle:
@@ -13,7 +14,7 @@ class Obstacle:
         self.reset()
 
     def reset(self):
-        self.x = SCREEN_WIDTH // 2
+        self.x = SCREEN_WIDTH // 2 + (2 * random.random() - 1) * random.randint(OBSTACLE_SPREAD//2, OBSTACLE_SPREAD)
         self.y = random.randint(OBSTACLE_HEIGHT // 2, SCREEN_HEIGHT - OBSTACLE_HEIGHT // 2)
         self.vy = random.choice([-3, 3])
 
