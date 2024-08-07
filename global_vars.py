@@ -2,7 +2,8 @@ import math
 # Screen dimensions
 SCREEN_WIDTH = 1400
 SCREEN_HEIGHT = 600
-
+MID_WIDTH = SCREEN_WIDTH // 2
+MID_HEIGHT = SCREEN_HEIGHT // 2
 # Colors
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
