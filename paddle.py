@@ -17,8 +17,6 @@ class Paddle:
         self.vx = 0
         self.vy = 0
         self.mass = 0
-        self.bounciness = 0
-        self.slipperiness = 0
         self.color = (0,0,0)
         self.hit = False
         for key, value in config.items():

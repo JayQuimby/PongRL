@@ -10,14 +10,16 @@ o_conf = load_conf('obstacle')
 from ball import Ball
 from paddle import Paddle
 from obstacle import Obstacle
+
 pygame.init()
 pygame.font.init()
+
 font = pygame.font.Font(None, 28)
 big_font = pygame.font.Font(None, 48)
-
+small_font = pygame.font.Font(None, 18)
 rr = lambda x: round(x, 1)
 
-def collide(obj1, obj2, momentum_factor=1.5, size_speed_factor=1.5, min_speed=2.5, max_speed=15):
+def collide(obj1, obj2, momentum_factor=1.2, size_speed_factor=1.2, min_speed=2.0, max_speed=15):
     # Calculate relative velocity
     rvx = obj2.vx - obj1.vx
     rvy = obj2.vy - obj1.vy
@@ -70,20 +72,24 @@ class Game:
         p_conf['x'] = SCREEN_WIDTH - PADDLE_WIDTH * 1.5
         p_conf['color'] = GREEN
         self.right_paddle = Paddle(p_conf)
-        
+        self.fps = 60
         self.obstacles = []
         for _ in range(NUM_OBSTACLES):
             new_o = Obstacle(o_conf)
             self.obstacles.append(new_o)
-        
         self.running = True
-        self.play_game()
 
-    def get_player_moves(self):
+    def get_player_moves(self, keys):
         # Paddle movement
-        keys = pygame.key.get_pressed()
         self.left_paddle.vy += PADDLE_VEL * (-keys[pygame.K_w] + keys[pygame.K_s])
         self.right_paddle.vy += PADDLE_VEL * (-keys[pygame.K_UP] + keys[pygame.K_DOWN])
+
+    def get_ai_inputs(self, paddle):
+        arr = []
+        b_loc = (self.ball.x, self.ball.y)
+        p_loc = (paddle.x, paddle.y)
+        arr.append(math.sqrt((b_loc[0]-p_loc[0])**2 + (b_loc[1]-p_loc[1])**2))
+        return arr
 
     def get_ai_moves(self):
         bh = self.ball.y
@@ -105,17 +111,26 @@ class Game:
     def move_objects(self):
         self.left_paddle.vy *= PADDLE_MOVE_DECAY
         self.right_paddle.vy *= PADDLE_MOVE_DECAY
+
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_COMMA]:
+            self.fps -= 1
+        if keys[pygame.K_PERIOD]:
+            self.fps += 1
+
         if self.config['players']:
-            self.get_player_moves()
+            self.get_player_moves(keys)
         else:
             self.get_ai_moves()
+
         self.left_paddle.move()
         self.right_paddle.move()
         self.ball.move()
+
         for obs in self.obstacles:
             obs.move()
 
-    def check_for_score(self, score):
+    def check_for_score(self, score, dr):
         p1_score = self.ball.x > SCREEN_WIDTH
         p2_score = self.ball.x < 0
         
@@ -130,11 +145,15 @@ class Game:
             self.right_paddle.reset()
             for ob in self.obstacles:
                 ob.reset()
-        return score
+        p1_reward = (self.ball.x - SCREEN_WIDTH//2) / SCREEN_WIDTH + SCORE_REWARD_MULT * (p1_score - p2_score)
+        return score, (dr[0] + p1_reward, dr[1] - p1_reward)
     
     def detect_collision(self):
         # Collision with left paddle
+        p1r = 0
+        p2r = 0
         if self.left_paddle.collides(self.ball):
+            p1r += 2
             self.left_paddle.hit = True
             collide(self.left_paddle, self.ball)
             self.ball.vx = max(2, abs(self.ball.vx)) * VELO_MULT
@@ -144,6 +163,7 @@ class Game:
 
         # Collision with right paddle
         if self.right_paddle.collides(self.ball):
+            p2r += 2
             self.right_paddle.hit = True
             collide(self.right_paddle, self.ball)
             self.ball.vx = -max(2, abs(self.ball.vx)) * VELO_MULT
@@ -167,6 +187,8 @@ class Game:
 
         if self.ball.y > SCREEN_HEIGHT:
             self.ball.vy *= -1
+        
+        return p1r, p2r
 
     def redraw_screen(self):
         # Drawing
@@ -182,16 +204,22 @@ class Game:
         pygame.draw.rect(self.screen, (255,255,255), (0, SCREEN_HEIGHT, SCREEN_WIDTH, 1))
         pygame.draw.rect(self.screen, (255,255,255), (0, SCREEN_HEIGHT + 40, SCREEN_WIDTH, 1))
 
-    def display_variables(self, score):
+    def display_variables(self, score, rewards):
         ball_position_text = font.render(f'Ball Position: ({self.ball.x//10*10}, {self.ball.y//10*10})', True, WHITE)
         ball_velocity_text = font.render(f'Ball Velocity: ({rr(self.ball.vx)}, {rr(self.ball.vy)})', True, WHITE)
         left_paddle_text = font.render(f'Left Paddle Y: {rr(self.left_paddle.y)}', True, WHITE)
         right_paddle_text = font.render(f'Right Paddle Y: {rr(self.right_paddle.y)}', True, WHITE)
         score_text = big_font.render(f'P1: {score["p1"]} | P2: {score["p2"]}', True, WHITE)
+        fps_count = small_font.render(f'fps: {self.fps}', True, (255,255,0))
+        p1_reward = font.render(f'P1 Reward: {rr(rewards[0])}', True, WHITE)
+        p2_reward = font.render(f'P2 Reward: {rr(rewards[1])}', True, WHITE)
 
+        self.screen.blit(fps_count, (0, 0))
         self.screen.blit(ball_position_text, (SCREEN_WIDTH//2 + 50, SCREEN_HEIGHT + 10))
         self.screen.blit(ball_velocity_text, (SCREEN_WIDTH//2 - 210, SCREEN_HEIGHT + 10))
         self.screen.blit(score_text, (SCREEN_WIDTH//2 - 70, SCREEN_HEIGHT + 55))
+        self.screen.blit(p1_reward, (20, SCREEN_HEIGHT + 55))
+        self.screen.blit(p2_reward, (SCREEN_WIDTH - 160, SCREEN_HEIGHT + 55))
         self.screen.blit(left_paddle_text, (10, SCREEN_HEIGHT + 10))
         self.screen.blit(right_paddle_text, (SCREEN_WIDTH - 210, SCREEN_HEIGHT + 10))
 
@@ -200,21 +228,20 @@ class Game:
             if event.type == pygame.QUIT:
                 self.running = False
         self.move_objects()
-        self.detect_collision()
+        def_rewards = self.detect_collision()
         self.redraw_screen()
-        self.display_variables(score)
-        return self.check_for_score(score)
-
-    def play_game(self):
-        score = {
-            'p1': 0,  
-            'p2': 0
-        }
-        while self.running:
-            score = self.step(score)     
-            pygame.display.flip()
-            self.clock.tick(144)
-        pygame.quit()
+        score, rewards = self.check_for_score(score, def_rewards)
+        self.display_variables(score, rewards)
+        pygame.display.flip()
+        self.clock.tick(self.fps)
+        return score, rewards
 
 if __name__ == "__main__":
     g = Game(**{'players': False})
+    score = {
+        'p1': 0,  
+        'p2': 0
+    }
+    while g.running:
+        score, rewards = g.step(score)
+    pygame.quit()
