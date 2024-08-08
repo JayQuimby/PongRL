@@ -17,7 +17,7 @@ class GameDisplay:
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT + UI_SIZE))
         pygame.display.set_caption('Self play simulation')
         self.clock = pygame.time.Clock()
-        self.fps = 60
+        self.fps = 100
 
         pygame.font.init()
         self.font = pygame.font.Font(None, 28)
@@ -38,23 +38,24 @@ class GameDisplay:
     def display_variables(self, score, rewards):
         self.screen.fill(BLACK, pygame.Rect(0,SCREEN_HEIGHT, SCREEN_WIDTH, UI_SIZE))
         variables = [
-            (f'Ball Position: ({self.game.ball.x // 10 * 10}, {self.game.ball.y // 10 * 10})', self.font, (MID_WIDTH + 50, SCREEN_HEIGHT + 10)),
-            (f'Ball Velocity: ({rr(self.game.ball.vx)}, {rr(self.game.ball.vy)})', self.font, (MID_WIDTH - 210, SCREEN_HEIGHT + 10)),
-            (f'Left Paddle Y: {rr(self.game.paddles[0].y)}', self.font, (10, SCREEN_HEIGHT + 10)),
-            (f'Right Paddle Y: {rr(self.game.paddles[1].y)}', self.font, (SCREEN_WIDTH - 210, SCREEN_HEIGHT + 10)),
-            (f'{score["p1"]} - {score["p2"]}', self.big_font, (MID_WIDTH - 70, SCREEN_HEIGHT + 55), RED),
             (f'fps: {self.fps}', self.small_font, (0, SCREEN_HEIGHT), YELLOW),
-            (f'P1 Reward: {rr(rewards[0])}', self.font, (20, SCREEN_HEIGHT + 55), BLUE),
-            (f'P2 Reward: {rr(rewards[1])}', self.font, (SCREEN_WIDTH - 160, SCREEN_HEIGHT + 55), GREEN),
-            (f'Game: {self.game.cur_game}', self.font, (MID_WIDTH - 200, SCREEN_HEIGHT + 55), RED),
+            (f'Ball Position: ({self.game.ball.x // 10 * 10}, {self.game.ball.y // 10 * 10})', self.font, (MID_WIDTH + 110, SCREEN_HEIGHT + STAT_BAR_OFFSET)),
+            (f'Ball Velocity: ({rr(self.game.ball.vx)}, {rr(self.game.ball.vy)})', self.font, (MID_WIDTH - 310, SCREEN_HEIGHT + STAT_BAR_OFFSET)),
+            (f'Left Paddle Y: {rr(self.game.paddles[0].y)}', self.font, (10, SCREEN_HEIGHT + STAT_BAR_OFFSET)),
+            (f'Right Paddle Y: {rr(self.game.paddles[1].y)}', self.font, (SCREEN_WIDTH - 210, SCREEN_HEIGHT + STAT_BAR_OFFSET)),
+            (f'P1 Reward: {rr(rewards[0])}', self.font, (20, SCREEN_HEIGHT + REWARD_OFFSET), BLUE),
+            (f'P2 Reward: {rr(rewards[1])}', self.font, (SCREEN_WIDTH - 160, SCREEN_HEIGHT + REWARD_OFFSET), GREEN),
+            (f'Game: {self.game.cur_game}', self.font, (MID_WIDTH - 39, SCREEN_HEIGHT + 40), RED),
+            (f'{score["p1"]} - {score["p2"]}', self.big_font, (MID_WIDTH - 32, SCREEN_HEIGHT + 65), RED),
         ]
 
         for text, font, position, *color in variables:
             color = color[0] if color else WHITE
             rendered_text = self.render_text(text, font, color)
             self.blit_text(rendered_text, position)
+
         pygame.draw.rect(self.screen, WHITE, (0, SCREEN_HEIGHT, SCREEN_WIDTH, 1))
-        pygame.draw.rect(self.screen, WHITE, (0, SCREEN_HEIGHT + 40, SCREEN_WIDTH, 1))
+        pygame.draw.rect(self.screen, WHITE, (0, SCREEN_HEIGHT + 35, SCREEN_WIDTH, 1))
 
     def redraw_screen(self):
         # Drawing
@@ -287,7 +288,7 @@ class Game:
         return player_moves + bot_moves
 
     def reward_func(self, p1s, p1w, p2s, p2w):
-        return (self.ball.x - MID_WIDTH) / SCREEN_WIDTH + SCORE_REWARD_MULT * (p1s - p2s) + WIN_REWARD * (p1w - p2w)
+        return 2 * (self.ball.x - MID_WIDTH) / SCREEN_WIDTH + SCORE_REWARD_MULT * (p1s - p2s) + WIN_REWARD * (p1w - p2w)
 
     def check_for_score(self, score, dr):
         p1_score = self.ball.x > SCREEN_WIDTH
@@ -311,7 +312,13 @@ class Game:
                 ob.reset()
 
         p1_reward = self.reward_func(p1_score, p1_win, p2_score, p2_win)
-        return score, (dr[0] + p1_reward, dr[1] - p1_reward)
+        if self.ball.x < MID_WIDTH:
+            p1_dist = 2 - distance(self.paddles[0], self.ball) / MID_HEIGHT
+            p2_dist = 0
+        else:
+            p1_dist = 0
+            p2_dist = 2 - distance(self.paddles[1], self.ball) / MID_HEIGHT
+        return score, (dr[0] + p1_reward + p1_dist, dr[1] - p1_reward + p2_dist)
     
     def obstacle_collision(self):
         for i, obstacle in enumerate(self.obstacles):
