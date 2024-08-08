@@ -36,7 +36,7 @@ class GameDisplay:
         self.screen.blit(text, position)
 
     def display_variables(self, score, rewards):
-        self.screen.fill(BLACK, pygame.Rect(0,SCREEN_HEIGHT, SCREEN_WIDTH, UI_SIZE))
+        self.screen.fill(BLACK, pygame.Rect(0,SCREEN_HEIGHT+1, SCREEN_WIDTH, UI_SIZE))
         variables = [
             (f'fps: {self.fps}', self.small_font, (0, SCREEN_HEIGHT), YELLOW),
             (f'Ball Position: ({self.game.ball.x // 10 * 10}, {self.game.ball.y // 10 * 10})', self.font, (MID_WIDTH + 110, SCREEN_HEIGHT + STAT_BAR_OFFSET)),
@@ -53,22 +53,17 @@ class GameDisplay:
             color = color[0] if color else WHITE
             rendered_text = self.render_text(text, font, color)
             self.blit_text(rendered_text, position)
-
-        pygame.draw.rect(self.screen, WHITE, (0, SCREEN_HEIGHT, SCREEN_WIDTH, 1))
         pygame.draw.rect(self.screen, WHITE, (0, SCREEN_HEIGHT + 35, SCREEN_WIDTH, 1))
 
     def redraw_screen(self):
-        # Drawing
-        self.screen.fill(BLACK, pygame.Rect(0,0, SCREEN_WIDTH, SCREEN_HEIGHT))
-
-        pygame.draw.rect(self.screen, (255,255,255), (MID_WIDTH - OBSTACLE_SPREAD, 0, 1, SCREEN_HEIGHT))
-        pygame.draw.rect(self.screen, (255,255,255), (MID_WIDTH + OBSTACLE_SPREAD, 0, 1, SCREEN_HEIGHT))
-
         self.game.ball.draw(self.screen)
         self.game.paddles[0].draw(self.screen)
         self.game.paddles[1].draw(self.screen)
         for obstacle in self.game.obstacles:
             obstacle.draw(self.screen)
+        pygame.draw.rect(self.screen, WHITE, (MID_WIDTH - OBSTACLE_SPREAD, 0, 1, SCREEN_HEIGHT))
+        pygame.draw.rect(self.screen, WHITE, (MID_WIDTH + OBSTACLE_SPREAD, 0, 1, SCREEN_HEIGHT))
+        pygame.draw.rect(self.screen, WHITE, (0, SCREEN_HEIGHT, SCREEN_WIDTH, 1))
 
     def update_display(self, s, r):
         if self.step % SCREEN_SAMPLE_RATE == 0:
@@ -386,7 +381,7 @@ if __name__ == "__main__":
         'nn': 1,
         'training': True,
         'save_prog': True,
-        'num_games': 50
+        'num_games': 10
     }
     g = Game(**conf)
     

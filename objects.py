@@ -11,11 +11,11 @@ class Ball:
         self.vx = 0
         self.vy = 0
         self.mass = 0
-
         for key, value in config.items():
             setattr(self, key, value)
         self.r = BALL_RADIUS
         self.reset()
+        self.last = (self.x, self.y)
 
     def reset(self):
         self.x = MID_WIDTH
@@ -33,7 +33,7 @@ class Ball:
 
         self.x, self.vx = correct_speed(self.x, self.vx)
         self.y, self.vy = correct_speed(self.y, self.vy)
-
+        
         self.vy *= check_bounds(self.y - BALL_RADIUS, 0, self.vy, False)
         self.vy *= check_bounds(self.y + BALL_RADIUS, SCREEN_HEIGHT, self.vy)
 
@@ -52,8 +52,10 @@ class Ball:
         return math.hypot(self.vx, self.vy)
 
     def draw(self, screen):
-        pygame.draw.circle(screen, WHITE, (self.x, self.y), BALL_RADIUS)
-        pygame.draw.circle(screen, BALL_COLOR, (self.x, self.y), 5)
+        pygame.draw.circle(screen, BLACK, (self.last[0], self.last[1]), self.r)
+        pygame.draw.circle(screen, BALL_COLOR, (self.x, self.y), self.r)
+        pygame.draw.circle(screen, WHITE, (self.x, self.y), 5)
+        self.last = (self.x, self.y)
 
 class Obstacle:
     def __init__(self, config):
@@ -67,6 +69,7 @@ class Obstacle:
             setattr(self, key, value)
         self.r = OBSTACLE_RADIUS
         self.reset()
+        self.last = (self.x, self.y)
         
     def reset(self):
         self.x = MID_WIDTH + (2 * random.random() - 1) * random.randint(OBSTACLE_SPREAD//2, OBSTACLE_SPREAD)
@@ -93,8 +96,10 @@ class Obstacle:
         return math.hypot(self.vx, self.vy)
 
     def draw(self, screen):
+        pygame.draw.circle(screen, BLACK, (self.last[0], self.last[1]), self.r)
         pygame.draw.circle(screen, RED, (self.x, self.y), OBSTACLE_RADIUS)
         pygame.draw.circle(screen, BLACK, (self.x, self.y), 10)
+        self.last = (self.x, self.y)
 
 class Paddle:
     def __init__(self, config):
@@ -108,11 +113,13 @@ class Paddle:
         for key, value in config.items():
             setattr(self, key, value)
         self.r = PADDLE_RADIUS
-        self.reset()
         self.base_x = self.x
+        self.reset()
+        self.last = (self.x, self.y)
 
     def reset(self):
         self.y = MID_HEIGHT
+        self.x = self.base_x
 
     def collides(self, other):
         return distance(self, other) < (self.r + other.r)
@@ -124,6 +131,8 @@ class Paddle:
         self.x = max(min(self.x, self.base_x + self.r*2), self.base_x - self.r*2)
 
     def draw(self, screen):
+        pygame.draw.circle(screen, BLACK, (self.last[0], self.last[1]), self.r)
         pygame.draw.circle(screen, self.color if not self.hit else RED, (self.x, self.y), PADDLE_RADIUS)
         pygame.draw.circle(screen, BLACK, (self.x, self.y), 5)
+        self.last = (self.x, self.y)
 

@@ -18,7 +18,7 @@ class PongAgent:
         if os.path.exists(MODEL_PATH):
             self.load(MODEL_PATH)
         self.step = 0
-        self.thread_pool = ThreadPoolExecutor(max_workers=4)  # Adjust based on your CPU
+        self.thread_pool = ThreadPoolExecutor(max_workers=os.cpu_count())
 
     def _build_model(self):
         model = Sequential([
@@ -38,9 +38,7 @@ class PongAgent:
             act_values = self.model.predict(state, verbose=0)[0]
             return np.where(act_values > 0.5, 1, 0)
         elif random.random() < self.epsilon:
-            act = []
-            for _ in range(4):
-                act.append(0 if random.random() > 0.5 else 1)
+            act = np.random.randint(2, size=4).tolist()
             act.append(sum(act) == 0)
             return act
         else:
@@ -51,16 +49,15 @@ class PongAgent:
         states = np.vstack(states)
         next_states = np.vstack(next_states)
 
+        # Get Q-values for current states
+        target_f = self.model.predict(states, verbose=0)
         # Predict Q-values for next_states
         next_q_values = self.model.predict(next_states, verbose=0)
         
         # Calculate targets
         max_next_q_values = np.max(next_q_values, axis=1)
         targets = rewards + GAMMA * max_next_q_values * (1 - np.array(dones))
-        
-        # Get Q-values for current states
-        target_f = self.model.predict(states, verbose=0)
-        
+
         # Update Q-values for the actions taken
         for i, action in enumerate(actions):
             target_f[i][action] = targets[i]
