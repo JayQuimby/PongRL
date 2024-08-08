@@ -42,10 +42,11 @@ class GameDisplay:
             (f'Ball Velocity: ({rr(self.game.ball.vx)}, {rr(self.game.ball.vy)})', self.font, (MID_WIDTH - 210, SCREEN_HEIGHT + 10)),
             (f'Left Paddle Y: {rr(self.game.paddles[0].y)}', self.font, (10, SCREEN_HEIGHT + 10)),
             (f'Right Paddle Y: {rr(self.game.paddles[1].y)}', self.font, (SCREEN_WIDTH - 210, SCREEN_HEIGHT + 10)),
-            (f'P1: {score["p1"]} | P2: {score["p2"]}', self.big_font, (MID_WIDTH - 70, SCREEN_HEIGHT + 55)),
-            (f'fps: {self.fps}', self.small_font, (0, SCREEN_HEIGHT), (255, 255, 0)),
-            (f'P1 Reward: {rr(rewards[0])}', self.font, (20, SCREEN_HEIGHT + 55)),
-            (f'P2 Reward: {rr(rewards[1])}', self.font, (SCREEN_WIDTH - 160, SCREEN_HEIGHT + 55)),
+            (f'{score["p1"]} - {score["p2"]}', self.big_font, (MID_WIDTH - 70, SCREEN_HEIGHT + 55), RED),
+            (f'fps: {self.fps}', self.small_font, (0, SCREEN_HEIGHT), YELLOW),
+            (f'P1 Reward: {rr(rewards[0])}', self.font, (20, SCREEN_HEIGHT + 55), BLUE),
+            (f'P2 Reward: {rr(rewards[1])}', self.font, (SCREEN_WIDTH - 160, SCREEN_HEIGHT + 55), GREEN),
+            (f'Game: {self.game.cur_game}', self.font, (MID_WIDTH - 200, SCREEN_HEIGHT + 55), RED),
         ]
 
         for text, font, position, *color in variables:
@@ -235,15 +236,14 @@ class Game:
                 bot_actions.append(update_paddle(0, 1, self.ball.vx < 0 and self.ball.x < MID_WIDTH, follow, center))
                 bot_actions.append(update_paddle(1, -1, self.ball.vx > 0 and self.ball.x > MID_WIDTH, follow, center))
             elif self.nn == 1:
-                bot_actions.append(nn_play(0))
+                bot_actions.append(NULL_ACT if self.ball.x > MID_WIDTH else nn_play(0))
                 bot_actions.append(update_paddle(1, -1, self.ball.vx > 0 and self.ball.x > MID_WIDTH, follow, center))
             else:
                 if self.ball.x < MID_WIDTH:
-                    bot_actions.append(nn_play(0))
-                    bot_actions.append(NULL_ACT)
+                    bot_actions.extend([nn_play(0), NULL_ACT])
                 else:
-                    bot_actions.append(NULL_ACT)
-                    bot_actions.append(nn_play(1))
+                    bot_actions.extend([NULL_ACT, nn_play(1)])
+                    
 
         elif self.players == 1:
             if self.nn > 0:
@@ -270,12 +270,13 @@ class Game:
         self.resistance()
         self.toggle_keys(keys)
 
+        player_moves = []
         if self.players > 0:
             player_moves = self.get_player_moves(keys)
-
+    
+        bot_moves = []
         if self.players < 2: 
             bot_moves = self.get_ai_moves()
-            print(len(bot_moves))
 
         self.paddles[0].move()
         self.paddles[1].move()
@@ -284,6 +285,9 @@ class Game:
         for obs in self.obstacles:
             obs.move()
         return player_moves + bot_moves
+
+    def reward_func(self, p1s, p1w, p2s, p2w):
+        return (self.ball.x - MID_WIDTH) / SCREEN_WIDTH + SCORE_REWARD_MULT * (p1s - p2s) + WIN_REWARD * (p1w - p2w)
 
     def check_for_score(self, score, dr):
         p1_score = self.ball.x > SCREEN_WIDTH
@@ -306,7 +310,7 @@ class Game:
             for ob in self.obstacles:
                 ob.reset()
 
-        p1_reward = (self.ball.x - MID_WIDTH) / SCREEN_WIDTH + SCORE_REWARD_MULT * (p1_score - p2_score) + WIN_REWARD * (p1_win - p2_win)
+        p1_reward = self.reward_func(p1_score, p1_win, p2_score, p2_win)
         return score, (dr[0] + p1_reward, dr[1] - p1_reward)
     
     def obstacle_collision(self):
@@ -352,6 +356,7 @@ class Game:
 
     def run(self):
         for game_num in range(self.games):
+            self.cur_game = game_num
             score = {'p1': 0, 'p2': 0}
 
             while self.running:
@@ -370,11 +375,11 @@ class Game:
 
 if __name__ == "__main__":
     conf = {
-        'players': 1,
+        'players': 0,
         'nn': 1,
         'training': True,
         'save_prog': True,
-        'num_games': 20
+        'num_games': 50
     }
     g = Game(**conf)
     

@@ -29,13 +29,20 @@ class PongAgent:
         return model
 
     def remember(self, state, action, reward, next_state, done):
-        self.memory.append((state, action, reward, next_state, done))
+        if abs(reward) > 0.2:
+            self.memory.append((state, action, reward, next_state, done))
 
     def act(self, state):
         self.step_itter()
         if self.step == 0:
             act_values = self.model.predict(state, verbose=0)[0]
             return np.where(act_values > 0.5, 1, 0)
+        elif random.random() < self.epsilon:
+            act = []
+            for _ in range(4):
+                act.append(0 if random.random() > 0.5 else 1)
+            act.append(sum(act) == 0)
+            return act
         else:
             return NULL_ACT
 

@@ -53,7 +53,7 @@ class Ball:
 
     def draw(self, screen):
         pygame.draw.circle(screen, WHITE, (self.x, self.y), BALL_RADIUS)
-        pygame.draw.circle(screen, (215,35,245), (self.x, self.y), 5)
+        pygame.draw.circle(screen, BALL_COLOR, (self.x, self.y), 5)
 
 class Obstacle:
     def __init__(self, config):
@@ -94,7 +94,7 @@ class Obstacle:
 
     def draw(self, screen):
         pygame.draw.circle(screen, RED, (self.x, self.y), OBSTACLE_RADIUS)
-        pygame.draw.circle(screen, (0,0,0), (self.x, self.y), 10)
+        pygame.draw.circle(screen, BLACK, (self.x, self.y), 10)
 
 class Paddle:
     def __init__(self, config):
@@ -125,5 +125,5 @@ class Paddle:
 
     def draw(self, screen):
         pygame.draw.circle(screen, self.color if not self.hit else RED, (self.x, self.y), PADDLE_RADIUS)
-        pygame.draw.circle(screen, (0,0,0), (self.x, self.y), 5)
+        pygame.draw.circle(screen, BLACK, (self.x, self.y), 5)
 
