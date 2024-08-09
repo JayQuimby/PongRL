@@ -1,4 +1,4 @@
-import pygame
+import pygame as pg
 import numpy as np
 from global_vars import *
 from objects import Ball, Paddle, Obstacle
@@ -10,20 +10,39 @@ o_conf = load_conf('obstacle')
 rr = lambda x: round(x, 1)
 verify = lambda x: x['p1'] < MAX_SCORE and x['p2'] < MAX_SCORE
 
+def timer(func):
+    def wrapper(*args, **kwargs):
+        # Start the timer
+        start_time = pg.time.get_ticks()
+
+        # Execute the wrapped function
+        result = func(*args, **kwargs)
+
+        # Stop the timer
+        end_time = pg.time.get_ticks()
+        runtime = (end_time - start_time) / 1000.0 + 0.0001
+        
+        # Use the function's name as the message
+        message = f"{func.__name__}"
+        print(f"{message} took \033[0;32m{runtime:.4f}\033[0m seconds\t\033[0;35m{(1.0 / runtime):.2f}\033[0mfps")
+
+        return result
+    return wrapper
+
 class GameDisplay:
     def __init__(self, game):
         self.game = game
         
-        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT + UI_SIZE))
-        pygame.display.set_caption('Self play simulation')
-        self.clock = pygame.time.Clock()
-        self.fps = 100
+        self.screen = pg.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT + UI_SIZE))
+        pg.display.set_caption('Self play simulation')
+        self.clock = pg.time.Clock()
+        self.fps = 100 if not game.train else 1000
 
-        pygame.font.init()
-        self.font = pygame.font.Font(None, 28)
-        self.big_font = pygame.font.Font(None, 48)
-        self.small_font = pygame.font.Font(None, 18)
-
+        pg.font.init()
+        self.font = pg.font.Font(None, 28)
+        self.big_font = pg.font.Font(None, 48)
+        self.small_font = pg.font.Font(None, 18)
+        self.start = pg.time.get_ticks()
         self.step = 0
 
     def step_itter(self):
@@ -36,9 +55,11 @@ class GameDisplay:
         self.screen.blit(text, position)
 
     def display_variables(self, score, rewards):
-        self.screen.fill(BLACK, pygame.Rect(0,SCREEN_HEIGHT+1, SCREEN_WIDTH, UI_SIZE))
+        end = pg.time.get_ticks()
+        self.screen.fill(BLACK, pg.Rect(0,SCREEN_HEIGHT+1, SCREEN_WIDTH, UI_SIZE))
+        runtime = (end - self.start) / 1000.0 + 0.0001
         variables = [
-            (f'fps: {self.fps}', self.small_font, (0, SCREEN_HEIGHT), YELLOW),
+            (f'FPS | {self.fps} : {int(UI_SAMPLE_RATE/runtime)} |', self.small_font, (0, SCREEN_HEIGHT+40), YELLOW),
             (f'Ball Position: ({self.game.ball.x // 10 * 10}, {self.game.ball.y // 10 * 10})', self.font, (MID_WIDTH + 110, SCREEN_HEIGHT + STAT_BAR_OFFSET)),
             (f'Ball Velocity: ({rr(self.game.ball.vx)}, {rr(self.game.ball.vy)})', self.font, (MID_WIDTH - 310, SCREEN_HEIGHT + STAT_BAR_OFFSET)),
             (f'Left Paddle Y: {rr(self.game.paddles[0].y)}', self.font, (10, SCREEN_HEIGHT + STAT_BAR_OFFSET)),
@@ -48,12 +69,17 @@ class GameDisplay:
             (f'Game: {self.game.cur_game}', self.font, (MID_WIDTH - 39, SCREEN_HEIGHT + 40), RED),
             (f'{score["p1"]} - {score["p2"]}', self.big_font, (MID_WIDTH - 32, SCREEN_HEIGHT + 65), RED),
         ]
+        if self.game.nn_model:
+            variables.extend([
+                    (f'NN Control: {round((1-self.game.nn_model.epsilon)*100, 2)}%', self.small_font, (110, SCREEN_HEIGHT+40), YELLOW)
+                ])
 
         for text, font, position, *color in variables:
             color = color[0] if color else WHITE
             rendered_text = self.render_text(text, font, color)
             self.blit_text(rendered_text, position)
-        pygame.draw.rect(self.screen, WHITE, (0, SCREEN_HEIGHT + 35, SCREEN_WIDTH, 1))
+        pg.draw.rect(self.screen, WHITE, (0, SCREEN_HEIGHT + 35, SCREEN_WIDTH, 1))
+        self.start = pg.time.get_ticks()
 
     def redraw_screen(self):
         self.game.ball.draw(self.screen)
@@ -61,30 +87,31 @@ class GameDisplay:
         self.game.paddles[1].draw(self.screen)
         for obstacle in self.game.obstacles:
             obstacle.draw(self.screen)
-        pygame.draw.rect(self.screen, WHITE, (MID_WIDTH - OBSTACLE_SPREAD, 0, 1, SCREEN_HEIGHT))
-        pygame.draw.rect(self.screen, WHITE, (MID_WIDTH + OBSTACLE_SPREAD, 0, 1, SCREEN_HEIGHT))
-        pygame.draw.rect(self.screen, WHITE, (0, SCREEN_HEIGHT, SCREEN_WIDTH, 1))
+        pg.draw.rect(self.screen, WHITE, (MID_WIDTH - OBSTACLE_SPREAD, 0, 1, SCREEN_HEIGHT))
+        pg.draw.rect(self.screen, WHITE, (MID_WIDTH + OBSTACLE_SPREAD, 0, 1, SCREEN_HEIGHT))
+        pg.draw.rect(self.screen, WHITE, (0, SCREEN_HEIGHT, SCREEN_WIDTH, 1))
 
     def update_display(self, s, r):
         if self.step % SCREEN_SAMPLE_RATE == 0:
             self.redraw_screen()
         if self.step == 0:
             self.display_variables(s, r)
-        pygame.display.flip()
+        pg.display.flip()
         self.clock.tick(self.fps)
         self.step_itter()
 
     def inc_fps(self, neg=False):
-        self.fps -= 1 if neg else -1
+        self.fps -= (1 if neg else -1)
+        self.fps = min(max(self.fps, 0), 1000)
 
 class Game:
     def __init__(self, **config):
-        pygame.init()
+        pg.init()
         self.players = config.get('players', 0)
         self.nn = config.get('nn', 0)
-        self.train = config.get('training', False)
+        self.train = False if not self.nn else config.get('training', False) 
         self.games = config.get('num_games', 1)
-        self.save = config.get('save_prog', False)
+        self.save = False if not self.nn else config.get('save_prog', False)
         self.read_out = GameDisplay(self)
 
         self.ball = Ball(b_conf)
@@ -106,10 +133,11 @@ class Game:
         self.cur_state = [self.get_state(0), self.get_state(1)]
         self.nn_model = None
         if self.nn:
-            self.nn_model = PongAgent()
+            self.nn_model = PongAgent(self.train, self.games)
         self.running = True
+        self.need_rs = False
         self.run()
-        pygame.quit()
+        pg.quit()
 
     def get_player_moves(self, keys):
         # Paddle movement
@@ -117,8 +145,8 @@ class Game:
         
         if self.players > 0:
             act = [0, 0, 0, 0, 0]
-            up_down = (-keys[pygame.K_w] + keys[pygame.K_s])
-            left_right = (-keys[pygame.K_a] + keys[pygame.K_d])
+            up_down = (-keys[pg.K_w] + keys[pg.K_s])
+            left_right = (-keys[pg.K_a] + keys[pg.K_d])
             
             if up_down or left_right:
                 act[0] = up_down > 0  # Move up
@@ -133,8 +161,8 @@ class Game:
 
         if self.players > 1:
             act = [0, 0, 0, 0, 0]
-            up_down = (-keys[pygame.K_UP] + keys[pygame.K_DOWN])
-            left_right = (-keys[pygame.K_LEFT] + keys[pygame.K_RIGHT])
+            up_down = (-keys[pg.K_UP] + keys[pg.K_DOWN])
+            left_right = (-keys[pg.K_LEFT] + keys[pg.K_RIGHT])
             
             if up_down or left_right:
                 act[0] = up_down > 0  # Move up
@@ -179,6 +207,9 @@ class Game:
         
         return np.reshape(inputs, [1, len(inputs)])
 
+    def get_whole_state(self):
+        return [self.get_state(0), self.get_state(1)]
+
     def get_ai_moves(self):
         bh = self.ball.y
         vl = self.ball.vy
@@ -218,11 +249,11 @@ class Game:
             paddle = self.paddles[rev]
             if action[0]:  # Up
                 paddle.vy -= PADDLE_VEL
-            elif action[1]:  # Down
+            if action[1]:  # Down
                 paddle.vy += PADDLE_VEL
-            elif action[2]:  # Left
+            if action[2]:  # Left
                 paddle.vx -= PADDLE_VEL
-            elif action[3]:  # Right
+            if action[3]:  # Right
                 paddle.vx += PADDLE_VEL
             return action
 
@@ -250,19 +281,16 @@ class Game:
         return bot_actions
     
     def resistance(self):
-        ai_p1 = AI_MOVE_EDGE * (self.players == 0 and self.nn >= 1)
-        ai_p2 = AI_MOVE_EDGE * (self.players == 0 and self.nn == 2 or self.players == 1 and self.nn == 1)
-        self.paddles[0].vy *= PADDLE_MOVE_DECAY + ai_p1
-        self.paddles[0].vx *= PADDLE_MOVE_DECAY + ai_p1
-        self.paddles[1].vy *= PADDLE_MOVE_DECAY + ai_p2
-        self.paddles[1].vx *= PADDLE_MOVE_DECAY + ai_p2
+        for p in self.paddles:
+            p.vy *= PADDLE_MOVE_DECAY 
+            p.vx *= PADDLE_MOVE_DECAY 
 
     def toggle_keys(self, keys):
-        if keys[pygame.K_COMMA]: self.read_out.inc_fps(1)
-        if keys[pygame.K_PERIOD]: self.read_out.inc_fps()
+        if keys[pg.K_COMMA]: self.read_out.inc_fps(1)
+        if keys[pg.K_PERIOD]: self.read_out.inc_fps()
 
     def move_objects(self):
-        keys = pygame.key.get_pressed()
+        keys = pg.key.get_pressed()
         self.resistance()
         self.toggle_keys(keys)
 
@@ -281,15 +309,28 @@ class Game:
         for obs in self.obstacles:
             obs.move()
         return player_moves + bot_moves
+    
+    def reward_func(self, p1s, p1w, p2s, p2w, dr):
+        score_factor = SCORE_REWARD_MULT * (p1s - p2s)
+        win_factor = WIN_REWARD * (p1w - p2w)
+        base_reward = score_factor + win_factor
+        rewards = [[dr[0] + base_reward], [dr[1] - base_reward]]
+        
+        i = self.ball.x > MID_WIDTH
+        rewards[i].append(2 - distance(self.paddles[i], self.ball) / MID_HEIGHT)
+        rewards[i].append(1 - abs(self.paddles[i].y - self.ball.y) / MID_HEIGHT)
 
-    def reward_func(self, p1s, p1w, p2s, p2w):
-        return 2 * (self.ball.x - MID_WIDTH) / SCREEN_WIDTH + SCORE_REWARD_MULT * (p1s - p2s) + WIN_REWARD * (p1w - p2w)
+        rewards[0].append(0 if not self.paddles[0].hit or self.ball.vx < 0 else HIT_REWARD)
+        rewards[1].append(0 if not self.paddles[1].hit or self.ball.vx > 0 else HIT_REWARD)
+
+        return [sum(r) for r in rewards]
 
     def check_for_score(self, score, dr):
         p1_score = self.ball.x > SCREEN_WIDTH
         p2_score = self.ball.x < 0
         p1_win = False
         p2_win = False
+        ns = self.get_whole_state()
         if p1_score or p2_score:
             if p1_score:
                 score['p1'] += 1
@@ -300,20 +341,10 @@ class Game:
                 self.running = verify(score)
                 p2_win = not self.running
 
-            self.ball.reset()
-            self.paddles[0].reset()
-            self.paddles[1].reset()
-            for ob in self.obstacles:
-                ob.reset()
+            self.reset()
 
-        p1_reward = self.reward_func(p1_score, p1_win, p2_score, p2_win)
-        if self.ball.x < MID_WIDTH:
-            p1_dist = 2 - distance(self.paddles[0], self.ball) / MID_HEIGHT
-            p2_dist = 0
-        else:
-            p1_dist = 0
-            p2_dist = 2 - distance(self.paddles[1], self.ball) / MID_HEIGHT
-        return score, (dr[0] + p1_reward + p1_dist, dr[1] - p1_reward + p2_dist)
+        rewards = self.reward_func(p1_score, p1_win, p2_score, p2_win, dr)
+        return score, rewards, ns
     
     def obstacle_collision(self):
         for i, obstacle in enumerate(self.obstacles):
@@ -345,16 +376,19 @@ class Game:
             p.reset()
         for o in self.obstacles:
             o.reset()
+    
+    def new_game(self):
         self.running = True
+        self.reset()
 
     def step(self, score):
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
+        for event in pg.event.get():
+            if event.type == pg.QUIT:
                 self.running = False
         moves = self.move_objects()
-        score, rewards = self.detect_collision(score)
+        score, rewards, next_state = self.detect_collision(score)
         self.read_out.update_display(score, rewards)
-        return score, rewards, moves
+        return score, rewards, moves, next_state
 
     def run(self):
         for game_num in range(self.games):
@@ -362,14 +396,13 @@ class Game:
             score = {'p1': 0, 'p2': 0}
 
             while self.running:
-                score, rewards, actions = self.step(score)
+                score, rewards, actions, next_state = self.step(score)
                 
                 if self.train:
-                    next_state = [self.get_state(0), self.get_state(1)]
                     for x in [0, 1]:
                         self.nn_model.remember(self.cur_state[x], actions[x], rewards[x], next_state[x], self.running)
                     self.cur_state = next_state
-            self.reset()
+            self.new_game()
             if self.train:
                 self.nn_model.replay()
         if self.train and self.save:
@@ -378,12 +411,13 @@ class Game:
 if __name__ == "__main__":
     conf = {
         'players': 0,
-        'nn': 1,
         'training': True,
         'save_prog': True,
-        'num_games': 10
+        'num_games': 50
     }
-    g = Game(**conf)
-    
-    
+    for _ in range(5):
+        conf['nn'] = 2
+        g = Game(**conf)
+        conf['nn'] = 1
+        g = Game(**conf)
 

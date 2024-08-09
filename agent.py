@@ -1,48 +1,67 @@
 import numpy as np
 from collections import deque
 import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense
+from keras.models import Sequential
+from keras.layers import Dense
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_memory_growth(gpus[0], True)
+from keras import mixed_precision
+policy = mixed_precision.Policy('mixed_float16')
+mixed_precision.set_global_policy(policy)
 import random
 import os
 from global_vars import *
 from concurrent.futures import ThreadPoolExecutor
 
 class PongAgent:
-    def __init__(self):
+    def __init__(self, train, games):
+        self.train = train
+        self.num_itters = games
         self.memory = deque(maxlen=MEMORY_SIZE)
-        self.epsilon = 1.0
+        self.epsilon = 1.0 if train else 0.0
+        self.decay = 0.2**(1/games)
         self.model = self._build_model()
         if os.path.exists(MODEL_PATH):
             self.load(MODEL_PATH)
         self.step = 0
         self.thread_pool = ThreadPoolExecutor(max_workers=os.cpu_count())
+        self.last_act = [0,0,0,0,0]
 
-    def _build_model(self):
+    def _build_model(self) -> Sequential:
         model = Sequential([
-            Dense(24, input_dim=INPUT_SIZE, activation='relu'),
+            Dense(128, input_dim=INPUT_SIZE, activation='relu'),
+            Dense(256, activation='relu'),
+            Dense(128, activation='relu'),
+            Dense(128, activation='relu'),
+            Dense(64, activation='relu'),
+            Dense(64, activation='relu'),
             Dense(ACTION_SIZE, activation='sigmoid')
         ])
         model.compile(loss='mse', optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE))
         return model
 
     def remember(self, state, action, reward, next_state, done):
-        if abs(reward) > 0.2:
+        if abs(reward) > 0.5:
             self.memory.append((state, action, reward, next_state, done))
 
     def act(self, state):
         self.step_itter()
-        if self.step == 0:
-            act_values = self.model.predict(state, verbose=0)[0]
-            return np.where(act_values > 0.5, 1, 0)
-        elif random.random() < self.epsilon:
-            act = np.random.randint(2, size=4).tolist()
-            act.append(sum(act) == 0)
-            return act
+        act = []
+        if random.random() < self.epsilon:
+            for _ in range(5):
+                act += [0 if random.random() < 0.5 else 1]
         else:
-            return NULL_ACT
+            if self.step == 0:
+                act = np.where(self._optimized_predict(state) > 0.5, 1, 0)
+            else:
+                act = self.last_act
+        return act
+
+    @tf.function
+    @tf.autograph.experimental.do_not_convert
+    def _optimized_predict(self, state):
+        # Disable gradient tracking for the forward pass
+        return self.model(state, training=False)[0]
 
     def _process_batch(self, batch):
         states, actions, rewards, next_states, dones = zip(*batch)
@@ -69,29 +88,32 @@ class PongAgent:
         if len(self.memory) < BATCH_SIZE:
             return
 
-        minibatch = random.sample(self.memory, BATCH_SIZE)
+        num_batches = (len(self.memory) // 5) // BATCH_SIZE  # Number of batches
         num_sub_batches = 4  # Adjust based on your needs
         sub_batch_size = BATCH_SIZE // num_sub_batches
 
-        futures = []
-        for i in range(0, BATCH_SIZE, sub_batch_size):
-            sub_batch = minibatch[i:i+sub_batch_size]
-            futures.append(self.thread_pool.submit(self._process_batch, sub_batch))
+        for _ in range(num_batches):
+            minibatch = random.sample(self.memory, BATCH_SIZE)
 
-        all_states = []
-        all_targets = []
-        for future in futures:
-            states, targets = future.result()
-            all_states.append(states)
-            all_targets.append(targets)
+            futures = []
+            for i in range(0, BATCH_SIZE, sub_batch_size):
+                sub_batch = minibatch[i:i+sub_batch_size]
+                futures.append(self.thread_pool.submit(self._process_batch, sub_batch))
 
-        all_states = np.vstack(all_states)
-        all_targets = np.vstack(all_targets)
+            all_states = []
+            all_targets = []
+            for future in futures:
+                states, targets = future.result()
+                all_states.append(states)
+                all_targets.append(targets)
 
-        self.model.fit(all_states, all_targets, epochs=1, verbose=1, batch_size=32)
+            all_states = np.vstack(all_states)
+            all_targets = np.vstack(all_targets)
 
-        if self.epsilon > MIN_EPSILON:
-            self.epsilon *= EPSILON_DECAY
+            self.model.fit(all_states, all_targets, epochs=1, verbose=1, batch_size=32)
+
+        if self.train and self.epsilon > MIN_EPSILON:
+            self.epsilon *= self.decay
 
     def step_itter(self):
         self.step = (self.step + 1) % MODEL_SAMPLE_RATE
