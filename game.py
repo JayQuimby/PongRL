@@ -71,7 +71,9 @@ class GameDisplay:
         ]
         if self.game.nn_model:
             variables.extend([
-                    (f'NN Control: {round((1-self.game.nn_model.epsilon)*100, 2)}%', self.small_font, (110, SCREEN_HEIGHT+40), YELLOW)
+                    (f'NN Control: {round((1-self.game.nn_model.epsilon)*100, 2)}%', self.small_font, (110, SCREEN_HEIGHT+40), YELLOW),
+                    (f'Match: {self.game.cur_match}', self.font, (MID_WIDTH-150, SCREEN_HEIGHT+40), RED),
+                    (f'Set: {self.game.cur_set}', self.font, (MID_WIDTH-150, SCREEN_HEIGHT+70), RED),
                 ])
 
         for text, font, position, *color in variables:
@@ -109,11 +111,14 @@ class Game:
         pg.init()
         self.players = config.get('players', 0)
         self.nn = config.get('nn', 0)
-        self.train = False if not self.nn else config.get('training', False) 
-        self.games = config.get('num_games', 1)
-        self.save = False if not self.nn else config.get('save_prog', False)
-        self.read_out = GameDisplay(self)
+        if self.nn:
+            self.train = config.get('training', False) 
+            self.save = False if not self.nn else config.get('save_prog', False)
+            self.cur_match = 0
+            self.cur_set = 0
 
+        self.games = config.get('num_games', 1)
+        self.read_out = GameDisplay(self)
         self.ball = Ball(b_conf)
         
         self.paddles = []
@@ -136,7 +141,10 @@ class Game:
             self.nn_model = PongAgent(self.train, self.games)
         self.running = True
         self.need_rs = False
-        self.run()
+        if self.train:
+            self.train_model()
+        else:
+            self.run()
         pg.quit()
 
     def get_player_moves(self, keys):
@@ -407,17 +415,23 @@ class Game:
                 self.nn_model.replay()
         if self.train and self.save:
             self.nn_model.save(MODEL_PATH)
+    
+    def train_model(self):
+        for match in range(5):
+            self.cur_match = match
+            for match_set in range(2):
+                self.cur_set = match_set
+                self.nn = match_set + 1
+                self.run()
 
 if __name__ == "__main__":
     conf = {
         'players': 0,
+        'nn': 1,
         'training': True,
         'save_prog': True,
         'num_games': 50
     }
-    for _ in range(5):
-        conf['nn'] = 2
-        g = Game(**conf)
-        conf['nn'] = 1
-        g = Game(**conf)
+    Game(**conf)
+
 
