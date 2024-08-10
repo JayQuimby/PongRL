@@ -32,7 +32,8 @@ def timer(func):
 class GameDisplay:
     def __init__(self, game):
         self.game = game
-        
+        self.game_rate = SCREEN_SAMPLE_RATE * (5 if self.game.train else 1)
+        self.ui_rate = UI_SAMPLE_RATE * (3 if self.game.train else 1)
         self.screen = pg.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT + UI_SIZE))
         pg.display.set_caption('Self play simulation')
         self.clock = pg.time.Clock()
@@ -46,7 +47,7 @@ class GameDisplay:
         self.step = 0
 
     def step_itter(self):
-        self.step = (self.step + 1) % UI_SAMPLE_RATE
+        self.step = (self.step + 1) % self.ui_rate
 
     def render_text(self, text, font, color=WHITE):
         return font.render(text, True, color)
@@ -59,7 +60,7 @@ class GameDisplay:
         self.screen.fill(BLACK, pg.Rect(0,SCREEN_HEIGHT+1, SCREEN_WIDTH, UI_SIZE))
         runtime = (end - self.start) / 1000.0 + 0.0001
         variables = [
-            (f'FPS | {self.fps} : {int(UI_SAMPLE_RATE/runtime)} |', self.small_font, (0, SCREEN_HEIGHT+40), YELLOW),
+            (f'FPS | {self.fps} : {int(self.ui_rate/runtime)} |', self.small_font, (0, SCREEN_HEIGHT+40), YELLOW),
             (f'Ball Position: ({self.game.ball.x // 10 * 10}, {self.game.ball.y // 10 * 10})', self.font, (MID_WIDTH + 110, SCREEN_HEIGHT + STAT_BAR_OFFSET)),
             (f'Ball Velocity: ({rr(self.game.ball.vx)}, {rr(self.game.ball.vy)})', self.font, (MID_WIDTH - 310, SCREEN_HEIGHT + STAT_BAR_OFFSET)),
             (f'Left Paddle Y: {rr(self.game.paddles[0].y)}', self.font, (10, SCREEN_HEIGHT + STAT_BAR_OFFSET)),
@@ -94,7 +95,7 @@ class GameDisplay:
         pg.draw.rect(self.screen, WHITE, (0, SCREEN_HEIGHT, SCREEN_WIDTH, 1))
 
     def update_display(self, s, r):
-        if self.step % SCREEN_SAMPLE_RATE == 0:
+        if self.step % self.game_rate == 0:
             self.redraw_screen()
         if self.step == 0:
             self.display_variables(s, r)
@@ -111,12 +112,14 @@ class Game:
         pg.init()
         self.players = config.get('players', 0)
         self.nn = config.get('nn', 0)
+        self.num_obs = config.get('obstacles', 0)
         if self.nn:
-            self.train = config.get('training', False) 
+            self.train = config.get('training', False)
             self.save = False if not self.nn else config.get('save_prog', False)
             self.cur_match = 0
             self.cur_set = 0
-
+        else:
+            self.train = False
         self.games = config.get('num_games', 1)
         self.read_out = GameDisplay(self)
         self.ball = Ball(b_conf)
@@ -131,9 +134,8 @@ class Game:
         self.paddles.append(Paddle(p_conf))
         
         self.obstacles = []
-        for _ in range(NUM_OBSTACLES):
-            new_o = Obstacle(o_conf)
-            self.obstacles.append(new_o)
+        for _ in range(self.num_obs):
+            self.add_obstacle()
 
         self.cur_state = [self.get_state(0), self.get_state(1)]
         self.nn_model = None
@@ -146,6 +148,10 @@ class Game:
         else:
             self.run()
         pg.quit()
+
+    def add_obstacle(self):
+        new_o = Obstacle(o_conf)
+        self.obstacles.append(new_o)
 
     def get_player_moves(self, keys):
         # Paddle movement
@@ -253,16 +259,16 @@ class Game:
 
         def nn_play(rev=False):
             model_input = self.get_state(rev)
-            action = self.nn_model.act(model_input)
+            action = self.nn_model(model_input)
             paddle = self.paddles[rev]
             if action[0]:  # Up
                 paddle.vy -= PADDLE_VEL
             if action[1]:  # Down
                 paddle.vy += PADDLE_VEL
             if action[2]:  # Left
-                paddle.vx -= PADDLE_VEL
+                paddle.vx -= PADDLE_VEL * -1 if rev else 1
             if action[3]:  # Right
-                paddle.vx += PADDLE_VEL
+                paddle.vx += PADDLE_VEL * -1 if rev else 1
             return action
 
         bot_actions = []
@@ -325,12 +331,18 @@ class Game:
         rewards = [[dr[0] + base_reward], [dr[1] - base_reward]]
         
         i = self.ball.x > MID_WIDTH
-        rewards[i].append(2 - distance(self.paddles[i], self.ball) / MID_HEIGHT)
-        rewards[i].append(1 - abs(self.paddles[i].y - self.ball.y) / MID_HEIGHT)
-
-        rewards[0].append(0 if not self.paddles[0].hit or self.ball.vx < 0 else HIT_REWARD)
-        rewards[1].append(0 if not self.paddles[1].hit or self.ball.vx > 0 else HIT_REWARD)
-
+        pad = self.paddles[i]
+        if i == 0:
+            rewards[i].append(2*((self.ball.x - self.ball.r) - (pad.x + pad.r))/MID_WIDTH)
+            rewards[i].append(HIT_REWARD if pad.hit and self.ball.vx > 0 else 0)
+            if pad.x < self.ball.x:
+                rewards[i].append(1 - abs(pad.y - self.ball.y) / MID_HEIGHT)
+        else:
+            rewards[i].append(2*((pad.x - pad.r) - (self.ball.x + self.ball.r))/MID_WIDTH)
+            rewards[i].append(HIT_REWARD if pad.hit and self.ball.vx < 0 else 0)
+            if pad.x > self.ball.x:
+                rewards[i].append(1 - abs(pad.y - self.ball.y) / MID_HEIGHT)
+        
         return [sum(r) for r in rewards]
 
     def check_for_score(self, score, dr):
@@ -389,6 +401,7 @@ class Game:
         self.running = True
         self.reset()
 
+    #@timer
     def step(self, score):
         for event in pg.event.get():
             if event.type == pg.QUIT:
@@ -412,26 +425,30 @@ class Game:
                     self.cur_state = next_state
             self.new_game()
             if self.train:
-                self.nn_model.replay()
+                self.nn_model.replay(5)
         if self.train and self.save:
+            self.nn_model.replay(1)
+            self.nn_model.reset_mem()
             self.nn_model.save(MODEL_PATH)
     
     def train_model(self):
-        for match in range(5):
+        for match in range(10):
             self.cur_match = match
             for match_set in range(2):
                 self.cur_set = match_set
-                self.nn = match_set + 1
+                #self.nn = match_set + 1
                 self.run()
+            if self.num_obs > 0:
+                self.add_obstacle()
 
 if __name__ == "__main__":
     conf = {
-        'players': 0,
-        'nn': 1,
+        'nn': 2,
         'training': True,
         'save_prog': True,
-        'num_games': 50
+        'num_games': 100
     }
+    #conf = {'players': 1,'nn': 1}
     Game(**conf)
 
 
