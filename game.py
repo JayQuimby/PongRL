@@ -32,12 +32,17 @@ def timer(func):
 class GameDisplay:
     def __init__(self, game):
         self.game = game
-        self.game_rate = SCREEN_SAMPLE_RATE * (5 if self.game.train else 1)
-        self.ui_rate = UI_SAMPLE_RATE * (3 if self.game.train else 1)
+        self.game_rate = SCREEN_SAMPLE_RATE * (5 if game.train else 1)
+        self.ui_rate = UI_SAMPLE_RATE * (3 if game.train else 1)
+        self.fps = 100 if not game.train else 1000
+        if game.slow_mo:
+            self.game_rate = 1
+            self.ui_rate = 5
+            self.fps = 10
         self.screen = pg.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT + UI_SIZE))
         pg.display.set_caption('Self play simulation')
         self.clock = pg.time.Clock()
-        self.fps = 100 if not game.train else 1000
+        
 
         pg.font.init()
         self.font = pg.font.Font(None, 28)
@@ -72,15 +77,36 @@ class GameDisplay:
         ]
         if self.game.nn_model:
             variables.extend([
-                    (f'NN Control: {round((1-self.game.nn_model.epsilon)*100, 2)}%', self.small_font, (110, SCREEN_HEIGHT+40), YELLOW),
+                    (f'NN Control: {round((1-self.game.nn_model.epsilon)*100, 2)}%', self.small_font, (110, SCREEN_HEIGHT + 40), YELLOW),
                     (f'Match: {self.game.cur_match}', self.font, (MID_WIDTH-150, SCREEN_HEIGHT+40), RED),
                     (f'Set: {self.game.cur_set}', self.font, (MID_WIDTH-150, SCREEN_HEIGHT+70), RED),
+                ])
+            
+            loss_vals = self.game.nn_model.stats['train_loss']
+            loss_plot = self.create_dense_plot(loss_vals, PLOT_WIDTH, PLOT_HEIGHT)
+            self.blit_text(loss_plot, (300, SCREEN_HEIGHT + 35))
+
+            if len(loss_vals) >  0:
+                variables.extend([
+                    (f'{round(max(loss_vals), 2)} -', self.small_font, (260, SCREEN_HEIGHT + 37), GREEN),
+                    (f'{round(min(loss_vals),2)} -', self.small_font, (260, SCREEN_HEIGHT + 27 + PLOT_HEIGHT), GREEN),
+                ])
+            plt_offset = SCREEN_WIDTH - PLOT_WIDTH - 300
+            win_loss = self.game.win_loss['w_l']
+            wl_plot = self.create_dense_plot(win_loss, PLOT_WIDTH, PLOT_HEIGHT)
+            self.blit_text(wl_plot, (plt_offset, SCREEN_HEIGHT + 35))
+
+            if len(win_loss) >  0:
+                variables.extend([
+                    (f'{round(max(win_loss),2)} -', self.small_font, (plt_offset-40, SCREEN_HEIGHT + 37), GREEN),
+                    (f'{round(min(win_loss),2)} -', self.small_font, (plt_offset-40, SCREEN_HEIGHT + 27 + PLOT_HEIGHT), GREEN),
                 ])
 
         for text, font, position, *color in variables:
             color = color[0] if color else WHITE
             rendered_text = self.render_text(text, font, color)
             self.blit_text(rendered_text, position)
+        
         pg.draw.rect(self.screen, WHITE, (0, SCREEN_HEIGHT + 35, SCREEN_WIDTH, 1))
         self.start = pg.time.get_ticks()
 
@@ -103,6 +129,31 @@ class GameDisplay:
         self.clock.tick(self.fps)
         self.step_itter()
 
+    def create_dense_plot(self, values, width, height, point_size=10, color=(0, 255, 0), bg_color=(0, 0, 0)):
+        # Create a 3D numpy array for the pixel data (height, width, RGB)
+        pixel_array = np.full((height, width, 3), bg_color, dtype=np.uint8)
+        
+        if len(values) == 0:
+            return pg.surfarray.make_surface(pixel_array)
+
+        # Normalize the values to fit within the height
+        min_val, max_val = min(values), max(values)
+        if min_val == max_val:
+            normalized_values = [height // 2] * len(values)
+        else:
+            normalized_values = [int((v - min_val) / (max_val - min_val) * (height - point_size)) for v in values]
+
+        # Determine the step size for x-axis
+        step = max(1, len(values) // width)
+
+        # Plot the points
+        for i in range(0, len(values), step):
+            x = int(i / len(values) * (width - point_size))
+            y = max(0, min(height - point_size, height - 1 - normalized_values[i]))  # Ensure y is within bounds
+            pixel_array[y, x] = color
+
+        return pg.transform.rotate(pg.transform.flip(pg.surfarray.make_surface(pixel_array),1,0),90)
+
     def inc_fps(self, neg=False):
         self.fps -= (1 if neg else -1)
         self.fps = min(max(self.fps, 0), 1000)
@@ -113,6 +164,7 @@ class Game:
         self.players = config.get('players', 0)
         self.nn = config.get('nn', 0)
         self.num_obs = config.get('obstacles', 0)
+        self.slow_mo = config.get('slow', False)
         if self.nn:
             self.train = config.get('training', False)
             self.save = False if not self.nn else config.get('save_prog', False)
@@ -142,7 +194,13 @@ class Game:
         if self.nn:
             self.nn_model = PongAgent(self.train, self.games)
         self.running = True
-        self.need_rs = False
+
+        self.win_loss = {
+            'p1_wins': 0,
+            'p2_wins': 0,
+            'w_l': []
+        }
+
         if self.train:
             self.train_model()
         else:
@@ -277,14 +335,21 @@ class Game:
                 bot_actions.append(update_paddle(0, 1, self.ball.vx < 0 and self.ball.x < MID_WIDTH, follow, center))
                 bot_actions.append(update_paddle(1, -1, self.ball.vx > 0 and self.ball.x > MID_WIDTH, follow, center))
             elif self.nn == 1:
-                bot_actions.append(NULL_ACT if self.ball.x > MID_WIDTH else nn_play(0))
+                bot_actions.append(nn_play(0))
                 bot_actions.append(update_paddle(1, -1, self.ball.vx > 0 and self.ball.x > MID_WIDTH, follow, center))
             else:
-                if self.ball.x < MID_WIDTH:
-                    bot_actions.extend([nn_play(0), NULL_ACT])
-                else:
-                    bot_actions.extend([NULL_ACT, nn_play(1)])
-                    
+                bot_actions.extend([nn_play(x) for x in range(2)])
+                '''right = MID_WIDTH + OBSTACLE_SPREAD
+                left = MID_WIDTH - OBSTACLE_SPREAD
+                if self.ball.x < right:
+                    bot_actions.append(nn_play(0))
+                if self.ball.x > left:
+                    bot_actions.append(nn_play(1))
+                if len(bot_actions) < 2:
+                    if self.ball.x > right:
+                        bot_actions.insert(0, NULL_ACT)
+                    else:
+                        bot_actions.append(NULL_ACT)'''
 
         elif self.players == 1:
             if self.nn > 0:
@@ -324,28 +389,26 @@ class Game:
             obs.move()
         return player_moves + bot_moves
     
-    def reward_func(self, p1s, p1w, p2s, p2w, dr):
+    def reward_func(self, p1s, p1w, p2s, p2w):
         score_factor = SCORE_REWARD_MULT * (p1s - p2s)
         win_factor = WIN_REWARD * (p1w - p2w)
         base_reward = score_factor + win_factor
-        rewards = [[dr[0] + base_reward], [dr[1] - base_reward]]
-        
-        i = self.ball.x > MID_WIDTH
-        pad = self.paddles[i]
-        if i == 0:
-            rewards[i].append(2*((self.ball.x - self.ball.r) - (pad.x + pad.r))/MID_WIDTH)
-            rewards[i].append(HIT_REWARD if pad.hit and self.ball.vx > 0 else 0)
-            if pad.x < self.ball.x:
-                rewards[i].append(1 - abs(pad.y - self.ball.y) / MID_HEIGHT)
-        else:
-            rewards[i].append(2*((pad.x - pad.r) - (self.ball.x + self.ball.r))/MID_WIDTH)
-            rewards[i].append(HIT_REWARD if pad.hit and self.ball.vx < 0 else 0)
-            if pad.x > self.ball.x:
-                rewards[i].append(1 - abs(pad.y - self.ball.y) / MID_HEIGHT)
+        rewards = [[base_reward], [-base_reward]]
+        cur_hit_reward = HIT_REWARD * abs(self.ball.vx)
+
+        for i, pad in enumerate(self.paddles):
+            if i == 0: # left paddle
+                rewards[i].append(MISS_PENALTY if self.ball.x < pad.x else 0.3)
+                rewards[i].append(0 if not pad.hit or not self.ball.vx > 0 else cur_hit_reward)
+            else: # right paddle
+                rewards[i].append(MISS_PENALTY if self.ball.x > pad.x else 0.3)
+                rewards[i].append(0 if not pad.hit or not self.ball.vx < 0 else cur_hit_reward)
+                
+            rewards[i].append(-abs(pad.y - self.ball.y)/SCREEN_HEIGHT)
         
         return [sum(r) for r in rewards]
 
-    def check_for_score(self, score, dr):
+    def check_for_score(self, score):
         p1_score = self.ball.x > SCREEN_WIDTH
         p2_score = self.ball.x < 0
         p1_win = False
@@ -363,7 +426,7 @@ class Game:
 
             self.reset()
 
-        rewards = self.reward_func(p1_score, p1_win, p2_score, p2_win, dr)
+        rewards = self.reward_func(p1_score, p1_win, p2_score, p2_win)
         return score, rewards, ns
     
     def obstacle_collision(self):
@@ -375,20 +438,22 @@ class Game:
                     if obstacle.collides(other):
                         collide(obstacle, other)
 
-    def paddle_collision(self, rewards):
-        for paddle, rew in zip(self.paddles, rewards):
+    def paddle_collision(self):
+        for i, paddle in enumerate(self.paddles):
             if paddle.collides(self.ball):
-                rew += 2
                 paddle.hit = True
                 collide(paddle, self.ball)
+                if i:
+                    self.ball.vx *= -1 if self.ball.vx > 0 and self.ball.x < paddle.x else 1
+                else:
+                    self.ball.vx *= -1 if self.ball.vx < 0 and self.ball.x > paddle.x else 1
             else:
                 paddle.hit = False
-        return rewards
 
     def detect_collision(self, score):
         self.obstacle_collision()
-        rewards = self.paddle_collision([0,0])
-        return self.check_for_score(score, rewards)
+        self.paddle_collision()
+        return self.check_for_score(score)
 
     def reset(self):
         self.ball.reset()
@@ -423,11 +488,18 @@ class Game:
                     for x in [0, 1]:
                         self.nn_model.remember(self.cur_state[x], actions[x], rewards[x], next_state[x], self.running)
                     self.cur_state = next_state
+
+            if score['p1'] == 11:
+                self.win_loss['p1_wins'] += 1
+            else:
+                self.win_loss['p2_wins'] += 1
+            self.win_loss['w_l'].append(self.win_loss['p1_wins']/(self.win_loss['p2_wins']+self.win_loss['p1_wins']))
+
             self.new_game()
             if self.train:
                 self.nn_model.replay(5)
         if self.train and self.save:
-            self.nn_model.replay(1)
+            self.nn_model.replay(2)
             self.nn_model.reset_mem()
             self.nn_model.save(MODEL_PATH)
     
@@ -448,7 +520,7 @@ if __name__ == "__main__":
         'save_prog': True,
         'num_games': 100
     }
-    #conf = {'players': 1,'nn': 1}
+    #conf = {'players': 1,'nn': 1, 'slow':True}
     Game(**conf)
 
 

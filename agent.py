@@ -1,7 +1,8 @@
 import numpy as np
 import tensorflow as tf
 from keras.models import Sequential
-from keras.layers import Dense
+from keras.layers import Dense, Dropout
+from keras.regularizers import l2
 from keras.optimizers import Adam
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_memory_growth(gpus[0], True)
@@ -59,23 +60,44 @@ class PongAgent:
         self.num_itters = games
         self.memory = AgentMemory()#deque(maxlen=MEMORY_SIZE)
         self.epsilon = 1.0 if train else 0.0
-        self.decay = 0.5**(1/games)
+        self.decay = 0.2**(1/games)
         self.model = self._build_model()
+        self.stats = {
+            'train_loss': [],
+            'win_rate': []
+        }
         if os.path.exists(MODEL_PATH):
             self.load(MODEL_PATH)
         self.step = 0
         self.thread_pool = ThreadPoolExecutor(max_workers=os.cpu_count())
-        self.last_act = [0,0,0,0,0]
+        self.last_act = [0,0,0,0,1]
 
-    def _build_model(self) -> Sequential:
-        model = Sequential([
-            Dense(128, input_dim=INPUT_SIZE, activation='relu'),
-            Dense(256, activation='relu'),
-            Dense(128, activation='relu'),
-            Dense(64, activation='relu'),
-            Dense(ACTION_SIZE, activation='linear')
-        ])
-        model.compile(loss='mse', optimizer=Adam(learning_rate=LEARNING_RATE))
+    def create_dense_block(units, dropout_rate=DROPOUT_RATE, l2_lambda=L2_LAMBDA):
+        return [
+            Dense(units, activation='relu', kernel_regularizer=l2(l2_lambda)),
+            Dropout(dropout_rate)
+        ]
+
+    def _build_model(self, hidden_layers=[128, 256, 128, 64, 64, 32]) -> Sequential:
+        model = Sequential()
+        
+        # Input layer
+        model.add(Dense(hidden_layers[0], input_dim=INPUT_SIZE, activation='relu', kernel_regularizer=l2(L2_LAMBDA)))
+        model.add(Dropout(DROPOUT_RATE))
+        
+        # Hidden layers
+        for units in hidden_layers[1:]:
+            model.add(Dense(units, activation='relu', kernel_regularizer=l2(L2_LAMBDA)))
+            model.add(Dropout(DROPOUT_RATE))
+        
+        # Output layer
+        model.add(Dense(ACTION_SIZE, activation='tanh'))
+        
+        model.compile(
+            loss='mse', 
+            optimizer=Adam(learning_rate=LEARNING_RATE),
+            metrics=['mae']
+        )
         return model
 
     def remember(self, state, action, reward, next_state, done):
@@ -84,13 +106,12 @@ class PongAgent:
 
     def __call__(self, state):
         self.step_itter()
-        act = []
+        act = [0,0,0,0,0]
         if random.random() < self.epsilon:
-            for _ in range(5):
-                act += [0 if random.random() < 0.5 else 1]
+            act[random.randint(0, 4)] = 1
         else:
             if self.step == 0:
-                act = np.where(self._optimized_predict(state) > 0.5, 1, 0)
+                act[np.argmax(self._optimized_predict(state))] = 1
             else:
                 act = self.last_act
         return act
@@ -105,12 +126,12 @@ class PongAgent:
         next_states = np.vstack(next_states)
 
         # Get Q-values for current states and next_states
-        target_f = self.model.predict(states, verbose=0)
-        next_q_values = self.model.predict(next_states, verbose=0)
+        target_f = self.model.predict(states, verbose=0) # Nx5
+        next_q_values = self.model.predict(next_states, verbose=0) # Nx5
         
         # Calculate targets
-        max_next_q_values = np.max(next_q_values, axis=1)
-        targets = rewards + GAMMA * max_next_q_values #* (1 - np.array(dones))
+        max_next_q_values = np.max(next_q_values, axis=1) # Nx1
+        targets = rewards + GAMMA * max_next_q_values * (1 - np.array(dones))
 
         # Update Q-values for the actions taken
         for i, action in enumerate(actions):
@@ -128,7 +149,7 @@ class PongAgent:
         sub_batch_size = BATCH_SIZE // num_sub_batches
 
         print(f'Training on {num_memories} memories.')
-
+        losses = []
         for _ in range(num_batches):
             minibatch = self.memory(num_memories) 
 
@@ -147,8 +168,9 @@ class PongAgent:
             all_states = np.vstack(all_states)
             all_targets = np.vstack(all_targets)
 
-            self.model.fit(all_states, all_targets, epochs=2, verbose=0, batch_size=BATCH_SIZE)
-
+            loss = self.model.fit(all_states, all_targets, epochs=1, verbose=0, batch_size=BATCH_SIZE)
+            losses.extend(loss.history['mae'])
+        self.stats['train_loss'].append(sum(losses)/len(losses))
         if self.train and self.epsilon > MIN_EPSILON:
             self.epsilon *= self.decay
 
