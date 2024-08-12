@@ -89,6 +89,7 @@ class GameDisplay:
             if len(loss_vals) >  0:
                 variables.extend([
                     (f'{round(max(loss_vals), 2)} -', self.small_font, (260, SCREEN_HEIGHT + 37), GREEN),
+                    (f'{METRIC}', self.small_font, (240, SCREEN_HEIGHT + 37 + 25), YELLOW),
                     (f'{round(min(loss_vals),2)} -', self.small_font, (260, SCREEN_HEIGHT + 27 + PLOT_HEIGHT), GREEN),
                 ])
             plt_offset = SCREEN_WIDTH - PLOT_WIDTH - 300
@@ -99,6 +100,7 @@ class GameDisplay:
             if len(win_loss) >  0:
                 variables.extend([
                     (f'{round(max(win_loss),2)} -', self.small_font, (plt_offset-40, SCREEN_HEIGHT + 37), GREEN),
+                    (f'Win/Loss', self.small_font, (plt_offset - 120, SCREEN_HEIGHT + 37 + 25), YELLOW),
                     (f'{round(min(win_loss),2)} -', self.small_font, (plt_offset-40, SCREEN_HEIGHT + 27 + PLOT_HEIGHT), GREEN),
                 ])
 
@@ -398,10 +400,10 @@ class Game:
 
         for i, pad in enumerate(self.paddles):
             if i == 0: # left paddle
-                rewards[i].append(MISS_PENALTY if self.ball.x < pad.x else 0.3)
+                rewards[i].append(MISS_PENALTY if self.ball.x < pad.x else 0.6)
                 rewards[i].append(0 if not pad.hit or not self.ball.vx > 0 else cur_hit_reward)
             else: # right paddle
-                rewards[i].append(MISS_PENALTY if self.ball.x > pad.x else 0.3)
+                rewards[i].append(MISS_PENALTY if self.ball.x > pad.x else 0.6) #(pad.x - self.ball.x)/SCREEN_WIDTH
                 rewards[i].append(0 if not pad.hit or not self.ball.vx < 0 else cur_hit_reward)
                 
             rewards[i].append(-abs(pad.y - self.ball.y)/SCREEN_HEIGHT)
@@ -497,9 +499,9 @@ class Game:
 
             self.new_game()
             if self.train:
-                self.nn_model.replay(5)
+                self.nn_model.replay(3)
         if self.train and self.save:
-            self.nn_model.replay(2)
+            self.nn_model.replay(1)
             self.nn_model.reset_mem()
             self.nn_model.save(MODEL_PATH)
     

@@ -29,19 +29,19 @@ class AgentMemory:
         return len(self.memories)
 
     def remember(self, action):
-        if len(self.memories) < self.max_mem:
-            self.memories.append(action)
-        else:
-            self.purge_memory()
-            self.memories.append(action)
+        if abs(action[2]) > MIN_REWARD_VAL:
+            if len(self.memories) < self.max_mem:
+                self.memories.append(action)
+            else:
+                self.purge_memory()
+                self.memories.append(action)
 
     def purge_memory(self):
         self.memories.sort(key=lambda x: x[self.reward_ind], reverse=True)
-        keep_top = int(0.1 * self.max_mem)
-        new_memories = self.memories[:keep_top]
+        new_memories = []
         new_lim = self.max_mem // 2
 
-        for memory in self.memories[keep_top:]:
+        for memory in self.memories:
             prob = 1 / (1 + math.exp(-memory[self.reward_ind]))
             if random.random() < prob:
                 new_memories.append(memory)
@@ -58,9 +58,9 @@ class PongAgent:
     def __init__(self, train, games):
         self.train = train
         self.num_itters = games
-        self.memory = AgentMemory()#deque(maxlen=MEMORY_SIZE)
+        self.memory = AgentMemory()
         self.epsilon = 1.0 if train else 0.0
-        self.decay = 0.2**(1/games)
+        self.decay = MIN_EPSILON**(1/games)
         self.model = self._build_model()
         self.stats = {
             'train_loss': [],
@@ -78,7 +78,7 @@ class PongAgent:
             Dropout(dropout_rate)
         ]
 
-    def _build_model(self, hidden_layers=[128, 256, 128, 64, 64, 32]) -> Sequential:
+    def _build_model(self, hidden_layers=[128,256]+[2**i for i in range(9,5,-1)]) -> Sequential:
         model = Sequential()
         
         # Input layer
@@ -94,15 +94,15 @@ class PongAgent:
         model.add(Dense(ACTION_SIZE, activation='tanh'))
         
         model.compile(
-            loss='mse', 
+            loss='categorical_crossentropy', 
             optimizer=Adam(learning_rate=LEARNING_RATE),
-            metrics=['mae']
+            metrics=[METRIC]
         )
+        model.summary(150)
         return model
 
     def remember(self, state, action, reward, next_state, done):
-        if abs(reward) > 0.5:
-            self.memory.remember((state, action, reward, next_state, done))#.append()
+        self.memory.remember((state, action, reward, next_state, done))#.append()
 
     def __call__(self, state):
         self.step_itter()
@@ -169,7 +169,7 @@ class PongAgent:
             all_targets = np.vstack(all_targets)
 
             loss = self.model.fit(all_states, all_targets, epochs=1, verbose=0, batch_size=BATCH_SIZE)
-            losses.extend(loss.history['mae'])
+            losses.extend(loss.history[METRIC])
         self.stats['train_loss'].append(sum(losses)/len(losses))
         if self.train and self.epsilon > MIN_EPSILON:
             self.epsilon *= self.decay
