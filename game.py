@@ -1,6 +1,7 @@
 import pygame as pg
 import numpy as np
 from global_vars import *
+from utils import bresenham_line, interpolate_color
 from objects import Ball, Paddle, Obstacle
 from agent import PongAgent
 from utils import load_conf, distance, collide
@@ -65,43 +66,42 @@ class GameDisplay:
         self.screen.fill(BLACK, pg.Rect(0,SCREEN_HEIGHT+1, SCREEN_WIDTH, UI_SIZE))
         runtime = (end - self.start) / 1000.0 + 0.0001
         variables = [
-            (f'FPS | {self.fps} : {int(self.ui_rate/runtime)} |', self.small_font, (0, SCREEN_HEIGHT+40), YELLOW),
+            (f'FPS | {self.fps} : {int(self.ui_rate/runtime)} |', self.small_font, (5, SCREEN_HEIGHT+40), YELLOW),
             (f'Ball Position: ({self.game.ball.x // 10 * 10}, {self.game.ball.y // 10 * 10})', self.font, (MID_WIDTH + 110, SCREEN_HEIGHT + STAT_BAR_OFFSET)),
             (f'Ball Velocity: ({rr(self.game.ball.vx)}, {rr(self.game.ball.vy)})', self.font, (MID_WIDTH - 310, SCREEN_HEIGHT + STAT_BAR_OFFSET)),
             (f'Left Paddle Y: {rr(self.game.paddles[0].y)}', self.font, (10, SCREEN_HEIGHT + STAT_BAR_OFFSET)),
             (f'Right Paddle Y: {rr(self.game.paddles[1].y)}', self.font, (SCREEN_WIDTH - 210, SCREEN_HEIGHT + STAT_BAR_OFFSET)),
             (f'P1 Reward: {rr(rewards[0])}', self.font, (20, SCREEN_HEIGHT + REWARD_OFFSET), BLUE),
             (f'P2 Reward: {rr(rewards[1])}', self.font, (SCREEN_WIDTH - 160, SCREEN_HEIGHT + REWARD_OFFSET), GREEN),
-            (f'Game: {self.game.cur_game}', self.font, (MID_WIDTH - 39, SCREEN_HEIGHT + 40), RED),
-            (f'{score["p1"]} - {score["p2"]}', self.big_font, (MID_WIDTH - 32, SCREEN_HEIGHT + 65), RED),
+            (f'Game: {self.game.cur_game}', self.font, (MID_WIDTH-25, SCREEN_HEIGHT + 40), RED),
+            (f'{score["p1"]} - {score["p2"]}', self.big_font, (MID_WIDTH-20, SCREEN_HEIGHT + 70), RED),
         ]
         if self.game.nn_model:
             variables.extend([
-                    (f'NN Control: {round((1-self.game.nn_model.epsilon)*100, 2)}%', self.small_font, (110, SCREEN_HEIGHT + 40), YELLOW),
-                    (f'Match: {self.game.cur_match}', self.font, (MID_WIDTH-150, SCREEN_HEIGHT+40), RED),
-                    (f'Set: {self.game.cur_set}', self.font, (MID_WIDTH-150, SCREEN_HEIGHT+70), RED),
+                    (f'NN Control: {round((1-self.game.nn_model.epsilon)*100, 2)}%', self.small_font, (SCREEN_WIDTH-120, SCREEN_HEIGHT + 40), YELLOW),
+                    (f'Match: {self.game.cur_match}', self.font, (MID_WIDTH-130, SCREEN_HEIGHT+40), RED),
+                    (f'Set: {self.game.cur_set}', self.font, (MID_WIDTH-115, SCREEN_HEIGHT+80), RED),
                 ])
             
             loss_vals = self.game.nn_model.stats['train_loss']
-            loss_plot = self.create_dense_plot(loss_vals, PLOT_WIDTH, PLOT_HEIGHT)
-            self.blit_text(loss_plot, (300, SCREEN_HEIGHT + 35))
+            self.blit_text(self.create_dense_plot(loss_vals, colors=(GREEN, RED)), (250, SCREEN_HEIGHT + 40))
 
             if len(loss_vals) >  0:
                 variables.extend([
-                    (f'{round(max(loss_vals), 2)} -', self.small_font, (260, SCREEN_HEIGHT + 37), GREEN),
-                    (f'{METRIC}', self.small_font, (240, SCREEN_HEIGHT + 37 + 25), YELLOW),
-                    (f'{round(min(loss_vals),2)} -', self.small_font, (260, SCREEN_HEIGHT + 27 + PLOT_HEIGHT), GREEN),
+                    (f'{round(max(loss_vals)*100, 2)}% -', self.small_font, (190, SCREEN_HEIGHT + 40), WHITE),
+                    (f'{METRIC}', self.small_font, (180, SCREEN_HEIGHT + 40 + 25), YELLOW),
+                    (f'{round(min(loss_vals)*100,2)}% -', self.small_font, (190, SCREEN_HEIGHT + 30 + PLOT_HEIGHT), WHITE),
                 ])
-            plt_offset = SCREEN_WIDTH - PLOT_WIDTH - 300
-            win_loss = self.game.win_loss['w_l']
-            wl_plot = self.create_dense_plot(win_loss, PLOT_WIDTH, PLOT_HEIGHT)
-            self.blit_text(wl_plot, (plt_offset, SCREEN_HEIGHT + 35))
+            
+            plt_offset = SCREEN_WIDTH - PLOT_WIDTH - 210
+            w_l = self.game.win_loss['w_l']
+            self.blit_text(self.create_dense_plot(w_l, colors=(BLUE, GREEN)), (plt_offset, SCREEN_HEIGHT + 40))
 
-            if len(win_loss) >  0:
+            if len(w_l) >  0:
                 variables.extend([
-                    (f'{round(max(win_loss),2)} -', self.small_font, (plt_offset-40, SCREEN_HEIGHT + 37), GREEN),
-                    (f'Win/Loss', self.small_font, (plt_offset - 120, SCREEN_HEIGHT + 37 + 25), YELLOW),
-                    (f'{round(min(win_loss),2)} -', self.small_font, (plt_offset-40, SCREEN_HEIGHT + 27 + PLOT_HEIGHT), GREEN),
+                    (f'{round(max(w_l)*100,2)}% -', self.small_font, (plt_offset-50, SCREEN_HEIGHT + 40), WHITE),
+                    (f'Win/Loss', self.small_font, (plt_offset-70, SCREEN_HEIGHT+40+25), YELLOW),
+                    (f'{round(min(w_l)*100,2)}% -', self.small_font, (plt_offset-50, SCREEN_HEIGHT + 30 + PLOT_HEIGHT), WHITE),
                 ])
 
         for text, font, position, *color in variables:
@@ -131,30 +131,37 @@ class GameDisplay:
         self.clock.tick(self.fps)
         self.step_itter()
 
-    def create_dense_plot(self, values, width, height, point_size=10, color=(0, 255, 0), bg_color=(0, 0, 0)):
+    def create_dense_plot(self, values, width=PLOT_WIDTH, height=PLOT_HEIGHT, point_size=1, colors=(GREEN, GRAY), bg_color=BLACK):
         # Create a 3D numpy array for the pixel data (height, width, RGB)
-        pixel_array = np.full((height, width, 3), bg_color, dtype=np.uint8)
+        pixel_array = np.full((width, height, 3), bg_color, dtype=np.uint8)
         
         if len(values) == 0:
             return pg.surfarray.make_surface(pixel_array)
 
-        # Normalize the values to fit within the height
         min_val, max_val = min(values), max(values)
         if min_val == max_val:
             normalized_values = [height // 2] * len(values)
         else:
             normalized_values = [int((v - min_val) / (max_val - min_val) * (height - point_size)) for v in values]
 
+        min_norm = min(normalized_values)
+        max_norm = max(normalized_values)
         # Determine the step size for x-axis
         step = max(1, len(values) // width)
 
         # Plot the points
+        previous_point = None
         for i in range(0, len(values), step):
             x = int(i / len(values) * (width - point_size))
-            y = max(0, min(height - point_size, height - 1 - normalized_values[i]))  # Ensure y is within bounds
-            pixel_array[y, x] = color
+            y = max(0, min(height - point_size, height - 1 - normalized_values[i]))  
 
-        return pg.transform.rotate(pg.transform.flip(pg.surfarray.make_surface(pixel_array),1,0),90)
+            if previous_point is not None:
+                for px, py in bresenham_line(previous_point[0], previous_point[1], x, y):
+                    pixel_array[px, py] = interpolate_color(py, min_norm, max_norm, colors[1], colors[0])
+            
+            previous_point = (x, y)
+
+        return pg.surfarray.make_surface(pixel_array)
 
     def inc_fps(self, neg=False):
         self.fps -= (1 if neg else -1)
@@ -326,9 +333,9 @@ class Game:
             if action[1]:  # Down
                 paddle.vy += PADDLE_VEL
             if action[2]:  # Left
-                paddle.vx -= PADDLE_VEL * -1 if rev else 1
+                paddle.vx -= PADDLE_VEL #* -1 if rev else 1
             if action[3]:  # Right
-                paddle.vx += PADDLE_VEL * -1 if rev else 1
+                paddle.vx += PADDLE_VEL #* -1 if rev else 1
             return action
 
         bot_actions = []
@@ -491,7 +498,7 @@ class Game:
                         self.nn_model.remember(self.cur_state[x], actions[x], rewards[x], next_state[x], self.running)
                     self.cur_state = next_state
 
-            if score['p1'] == 11:
+            if score['p1'] == MAX_SCORE:
                 self.win_loss['p1_wins'] += 1
             else:
                 self.win_loss['p2_wins'] += 1
@@ -510,19 +517,19 @@ class Game:
             self.cur_match = match
             for match_set in range(2):
                 self.cur_set = match_set
-                #self.nn = match_set + 1
+                self.nn = match_set + 1
                 self.run()
             if self.num_obs > 0:
                 self.add_obstacle()
 
 if __name__ == "__main__":
     conf = {
-        'nn': 2,
+        'nn': 1,
         'training': True,
         'save_prog': True,
         'num_games': 100
     }
-    #conf = {'players': 1,'nn': 1, 'slow':True}
+    #conf = {'players': 1,'nn': 1}#, 'slow':True}
     Game(**conf)
 
 

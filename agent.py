@@ -78,23 +78,23 @@ class PongAgent:
             Dropout(dropout_rate)
         ]
 
-    def _build_model(self, hidden_layers=[128,256]+[2**i for i in range(9,5,-1)]) -> Sequential:
+    def _build_model(self, hidden_layers=[128,256,512,512,256,256,128,128,64,64]) -> Sequential:
         model = Sequential()
         
         # Input layer
-        model.add(Dense(hidden_layers[0], input_dim=INPUT_SIZE, activation='relu', kernel_regularizer=l2(L2_LAMBDA)))
+        model.add(Dense(hidden_layers[0], input_dim=INPUT_SIZE, activation=ACTIVATION, kernel_regularizer=l2(L2_LAMBDA)))
         model.add(Dropout(DROPOUT_RATE))
         
         # Hidden layers
         for units in hidden_layers[1:]:
-            model.add(Dense(units, activation='relu', kernel_regularizer=l2(L2_LAMBDA)))
+            model.add(Dense(units, activation=ACTIVATION, kernel_regularizer=l2(L2_LAMBDA)))
             model.add(Dropout(DROPOUT_RATE))
         
         # Output layer
-        model.add(Dense(ACTION_SIZE, activation='tanh'))
+        model.add(Dense(ACTION_SIZE, activation=OUTPUT_ACTIV))
         
         model.compile(
-            loss='categorical_crossentropy', 
+            loss=LOSS_FUNC, 
             optimizer=Adam(learning_rate=LEARNING_RATE),
             metrics=[METRIC]
         )
@@ -132,10 +132,10 @@ class PongAgent:
         # Calculate targets
         max_next_q_values = np.max(next_q_values, axis=1) # Nx1
         targets = rewards + GAMMA * max_next_q_values * (1 - np.array(dones))
-
+        
         # Update Q-values for the actions taken
         for i, action in enumerate(actions):
-            target_f[i][action] = targets[i]
+            target_f[i][np.argmax(action)] = targets[i]
 
         return states, target_f
 

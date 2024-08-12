@@ -45,3 +45,35 @@ def collide(obj1, obj2, momentum_factor=1.2, size_speed_factor=1.2, min_speed=2.
     obj1.vy -= impulse_y / obj1.mass * size_multiplier1
     obj2.vx += impulse_x / obj2.mass * size_multiplier2
     obj2.vy += impulse_y / obj2.mass * size_multiplier2
+
+def bresenham_line(x0, y0, x1, y1):
+    """Generate points between two points using the Bresenham line algorithm."""
+    points = []
+    dx = abs(x1 - x0)
+    dy = abs(y1 - y0)
+    sx = 1 if x0 < x1 else -1
+    sy = 1 if y0 < y1 else -1
+    err = dx - dy
+
+    while True:
+        points.append((x0, y0))
+        if x0 == x1 and y0 == y1:
+            break
+        e2 = 2 * err
+        if e2 > -dy:
+            err -= dy
+            x0 += sx
+        if e2 < dx:
+            err += dx
+            y0 += sy
+
+    return points
+
+def interpolate_color(value, min_val, max_val, color1, color2):
+    """Interpolate between two colors based on the normalized value."""
+    ratio = (value - min_val) / (max_val - min_val) if min_val != max_val else 0.5
+    return (
+        int(color1[0] * ratio + color2[0] * (1 - ratio)),
+        int(color1[1] * ratio + color2[1] * (1 - ratio)),
+        int(color1[2] * ratio + color2[2] * (1 - ratio))
+    )
