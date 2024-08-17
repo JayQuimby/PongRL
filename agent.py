@@ -43,7 +43,7 @@ class PongAgent:
 
     def _build_model(self) -> Sequential:
         model = Sequential()
-        kernels = 64
+        kernels = 128
         
         # 3D Convolution block
         model.add(Conv3D(kernels, kernel_size=(17,9,3), strides=(7,3,1), activation=ACTIVATION, padding='same', input_shape=INPUT_SHAPE))
@@ -59,8 +59,8 @@ class PongAgent:
         model.add(Flatten())
         
         # Dense layers
-        units = 2**9
-        for _ in range(3):
+        units = 2**11
+        for _ in range(4):
             self.dense_block(model, int(units))
             units //= 2
         
@@ -72,7 +72,7 @@ class PongAgent:
             optimizer=Adam(learning_rate=LEARNING_RATE),
             metrics=[METRIC]
         )
-        #model.summary(100)
+        model.summary(100)
         return model
 
     def remember(self, state, action, reward, next_state, done):

@@ -1,3 +1,4 @@
+import math
 import random
 from global_vars import *
 

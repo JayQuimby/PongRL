@@ -419,20 +419,25 @@ class Game:
     
     def reward_func(self, p1s, p1w, p2s, p2w):
         def calculate_paddle_reward(paddle, ball, ticks):
-            if ticks < 15:
-                future = ball.vy * ticks
-                diff = ball.y + future
-                if diff < ball.r:
-                    future = abs(diff)
-                elif diff > SCREEN_HEIGHT - ball.r:
-                    future = SCREEN_HEIGHT - abs(diff)
+            r = 0
+            if ticks < 200:
+                delta = ball.vy * ticks
+                future = ball.y + delta
+                while not 0 < future < SCREEN_HEIGHT:
+                    if future < ball.r:
+                        future = abs(future)
+                    elif future > SCREEN_HEIGHT - ball.r:
+                        future = SCREEN_HEIGHT - (future - SCREEN_HEIGHT)
             else:
                 future = ball.y
+
             norm_dist = (future - paddle.y) / SCREEN_HEIGHT
-            y_alignment = -abs(norm_dist)
-            correct_direction = sigmoid(paddle.vy * norm_dist) - 0.2
-            x_alignment = MISS_PENALTY * ((ball.x - paddle.x) if paddle.x < MID_WIDTH else (paddle.x - ball.x)) / MID_WIDTH
-            return y_alignment + correct_direction + x_alignment
+            if norm_dist < paddle.r * 2:
+                r += sigmoid(MAX_ANTICIPATION_TIME - ticks)
+            r += -abs(norm_dist)
+            r += sigmoid(paddle.vy * norm_dist) - 0.5
+            r += MISS_PENALTY * ((ball.x - paddle.x) if paddle.x < MID_WIDTH else (paddle.x - ball.x)) / SCREEN_WIDTH
+            return r
 
         def calculate_hit_reward(paddle, ball):
             if not paddle.hit:
@@ -447,23 +452,15 @@ class Game:
 
         rewards = []
         for i, paddle in enumerate(self.paddles):
-            time_to_intercept = min(20, abs((dist-paddle.r) / (abs(self.ball.vx) + 1e-6)))
-            # Calculate anticipation reward
-            anticipation_reward = sigmoid(MAX_ANTICIPATION_TIME - time_to_intercept)
-
-            paddle_reward = calculate_paddle_reward(paddle, self.ball, time_to_intercept)
-            hit_reward = calculate_hit_reward(paddle, self.ball)
-            
+            reward = -base_reward if i else base_reward
             # Calculate distance-based reward
             dist = distance(paddle, self.ball)
-            distance_reward = 0.5 - min(1, dist / SCREEN_WIDTH)
+            reward += 0.5 - min(1, dist / SCREEN_WIDTH)
+            time_to_intercept = min(200, abs((dist-paddle.r) / (abs(self.ball.vx) + 1e-6)))
+            reward += calculate_paddle_reward(paddle, self.ball, time_to_intercept)
+            reward += calculate_hit_reward(paddle, self.ball)
             
-            
-            
-            # Combine all rewards
-            total_reward = paddle_reward + hit_reward + anticipation_reward + distance_reward 
-            total_reward += -base_reward if i else base_reward
-            rewards.append(total_reward)
+            rewards.append(reward)
 
         return rewards
 
@@ -588,10 +585,9 @@ if __name__ == "__main__":
         'num_games': 5,
         'matches': 10,
         'sets': 10,
-        'vision': True,
         'obstacles': 2
     }
-    conf = {'players':  2, 'nn':0, 'vision':True, 'num_games': 5, 'obstacles':0}#, 'slow':True}
+    #conf = {'players':  2, 'nn':0, 'num_games': 5, 'obstacles':0, 'slow':True}
     Game(**conf)
 
 
