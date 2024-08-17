@@ -42,10 +42,12 @@ class GameDisplay:
         self.game_rate = SCREEN_SAMPLE_RATE * (5 if game.train else 1)
         self.ui_rate = UI_SAMPLE_RATE * (3 if game.train else 1)
         self.fps = 100 if not game.train else 1000
+
         if game.slow_mo:
             self.game_rate = 1
             self.ui_rate = 1
             self.fps = 10
+        
         self.screen = pg.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT + UI_SIZE))
         pg.display.set_caption('Self play simulation')
         self.clock = pg.time.Clock()
@@ -189,11 +191,7 @@ class Game:
             self.num_matches = config.get('matches', 5)
             self.num_sets = config.get('sets', 2)
             self.total_games = self.games * self.num_matches * self.num_sets
-            self.vision = config.get('vision', True)
-            self.state_func = self.get_vec_grid if self.vision else self.get_linear_state
-            
         else:
-            self.state_func = self.get_vec_grid
             self.train = False
         
         self.read_out = GameDisplay(self)
@@ -214,9 +212,11 @@ class Game:
 
         self.cur_state = self.get_whole_state()
         
-        self.nn_model = None
         if self.nn:
-            self.nn_model = PongAgent(self.train, self.total_games, self.vision)
+            self.nn_model = PongAgent(self.train, self.total_games)
+        else:
+            self.nn_model = None
+
         self.running = True
 
         self.win_loss = {
@@ -268,17 +268,17 @@ class Game:
             left_right = (-keys[pg.K_LEFT] + keys[pg.K_RIGHT])
             
             if up_down or left_right:
-                act[0] = up_down > 0  # Move up
-                act[1] = up_down < 0  # Move dow
-                act[2] = left_right > 0  # Move left
-                act[3] = left_right < 0  # Move right
+                act[1] = up_down > 0  # Move up
+                act[0] = up_down < 0  # Move dow
+                act[3] = left_right > 0  # Move left
+                act[2] = left_right < 0  # Move right
             if not any(act[:4]):
                 act[4] = 1  # None
             actions.append(act)
 
         return actions
 
-    def get_vec_grid(self, rev=False):
+    def get_state(self, rev=False):
 
         def add_box(img, locate, rad, val, delim=STATE_SPLIT):
             offset = int(rad // delim)
@@ -310,48 +310,18 @@ class Game:
 
         pads = self.paddles[::-1] if rev else self.paddles
         for i, p in enumerate(pads):
-            ot = 1 if i else 2
+            ot = 3 if i else 1
             loc, val = get_obj_state_repr(p, ot, PADDLE_VEL)
             state_space = add_box(state_space, loc, p.r/normalizer, val)
         
         for ob in self.obstacles:
-            loc, val = get_obj_state_repr(ob, 3, BALL_MAX_SPEED)
+            loc, val = get_obj_state_repr(ob, 2, BALL_MAX_SPEED)
             state_space = add_box(state_space, loc, ob.r/normalizer, val)
         
         return state_space
 
-    def get_linear_state(self, rev=False):
-        inputs = []
-        paddle, op_paddle = self.paddles[::-1] if rev else self.paddles
-        # Ball position and velocity
-        inputs.extend([self.ball.x / SCREEN_WIDTH, self.ball.y / SCREEN_HEIGHT])
-        inputs.extend([self.ball.vx / BALL_MAX_SPEED, self.ball.vy / BALL_MAX_SPEED])
-        
-        # Paddle position and velocity
-        inputs.extend([paddle.x / SCREEN_WIDTH, paddle.y / SCREEN_HEIGHT])
-        inputs.extend([paddle.vx / PADDLE_VEL, paddle.vy / PADDLE_VEL])
-
-        inputs.extend([op_paddle.x / SCREEN_WIDTH, op_paddle.y / SCREEN_HEIGHT])
-        inputs.extend([op_paddle.vx / PADDLE_VEL, op_paddle.vy / PADDLE_VEL])
-        # Encode obstacles positions
-        grid_width = SCREEN_WIDTH // MIDGROUND_SPLIT
-        grid_height = SCREEN_HEIGHT // MIDGROUND_SPLIT
-        obstacle_grid = [0] * (grid_width * grid_height)
-        
-        shift = MID_WIDTH - OBSTACLE_SPREAD
-
-        for obstacle in self.obstacles:
-            grid_x = int((obstacle.x - shift) // MIDGROUND_SPLIT)
-            grid_y = int(obstacle.y // MIDGROUND_SPLIT)
-            index = grid_y * grid_width + grid_x
-            obstacle_grid[index] = 1
-        
-        inputs.extend(obstacle_grid)
-        
-        return np.reshape(inputs, [1, len(inputs)])
-
     def get_whole_state(self):
-        return [self.state_func(0), self.state_func(1)]
+        return [self.get_state(0), self.get_state(1)]
 
     def get_ai_moves(self):
         bh = self.ball.y
@@ -390,7 +360,7 @@ class Game:
             return act
 
         def nn_play(rev=False):
-            return self.nn_model(self.state_func(rev))          
+            return self.nn_model(self.get_state(rev))          
 
         bot_actions = []
         if self.players == 0:
@@ -448,8 +418,17 @@ class Game:
         return all_moves
     
     def reward_func(self, p1s, p1w, p2s, p2w):
-        def calculate_paddle_reward(paddle, ball):
-            norm_dist = (ball.y - paddle.y) / SCREEN_HEIGHT
+        def calculate_paddle_reward(paddle, ball, ticks):
+            if ticks < 15:
+                future = ball.vy * ticks
+                diff = ball.y + future
+                if diff < ball.r:
+                    future = abs(diff)
+                elif diff > SCREEN_HEIGHT - ball.r:
+                    future = SCREEN_HEIGHT - abs(diff)
+            else:
+                future = ball.y
+            norm_dist = (future - paddle.y) / SCREEN_HEIGHT
             y_alignment = -abs(norm_dist)
             correct_direction = sigmoid(paddle.vy * norm_dist) - 0.2
             x_alignment = MISS_PENALTY * ((ball.x - paddle.x) if paddle.x < MID_WIDTH else (paddle.x - ball.x)) / MID_WIDTH
@@ -458,8 +437,7 @@ class Game:
         def calculate_hit_reward(paddle, ball):
             if not paddle.hit:
                 return 0
-            
-            hit_direction = 1 if not ((paddle.x < MID_WIDTH) ^ (ball.vx > 0)) else -1
+            hit_direction = 2 * (not ((paddle.x < MID_WIDTH) ^ (ball.vx > 0))) - 1
             hit_position = (abs(paddle.y - ball.y) / paddle.r) + 0.5
             return HIT_REWARD * hit_direction * hit_position
 
@@ -469,16 +447,18 @@ class Game:
 
         rewards = []
         for i, paddle in enumerate(self.paddles):
-            paddle_reward = calculate_paddle_reward(paddle, self.ball)
+            time_to_intercept = min(20, abs((dist-paddle.r) / (abs(self.ball.vx) + 1e-6)))
+            # Calculate anticipation reward
+            anticipation_reward = sigmoid(MAX_ANTICIPATION_TIME - time_to_intercept)
+
+            paddle_reward = calculate_paddle_reward(paddle, self.ball, time_to_intercept)
             hit_reward = calculate_hit_reward(paddle, self.ball)
             
             # Calculate distance-based reward
             dist = distance(paddle, self.ball)
             distance_reward = 0.5 - min(1, dist / SCREEN_WIDTH)
             
-            # Calculate anticipation reward
-            time_to_intercept = min(50, abs((dist-paddle.r) / (abs(self.ball.vx) + 1e-6))) # Adding small value to avoid division by zero
-            anticipation_reward = sigmoid(MAX_ANTICIPATION_TIME - time_to_intercept)
+            
             
             # Combine all rewards
             total_reward = paddle_reward + hit_reward + anticipation_reward + distance_reward 
@@ -593,7 +573,7 @@ class Game:
             for match_set in range(1, self.num_sets+1):
                 self.cur_set = match_set
                 self.run()
-                self.nn = match_set % 2 + 1
+                #self.nn = match_set % 2 + 1
                 self.nn_model.update_target()
             #if self.num_obs > 0:
             #self.add_obstacle()
@@ -611,7 +591,7 @@ if __name__ == "__main__":
         'vision': True,
         'obstacles': 2
     }
-    #conf = {'players':  1, 'nn':1, 'vision':True, 'num_games': 5, 'obstacles':0}#, 'slow':True}
+    conf = {'players':  2, 'nn':0, 'vision':True, 'num_games': 5, 'obstacles':0}#, 'slow':True}
     Game(**conf)
 
 

@@ -1,13 +1,7 @@
 import numpy as np
 import tensorflow as tf
 from keras.models import Sequential, clone_model
-from keras.layers import (
-    Dense, Dropout, Conv2D, 
-    MaxPooling2D, Flatten, 
-    Conv3D, Lambda, MaxPooling3D,
-    Reshape
-)
-from keras.regularizers import l2
+from keras.layers import Dense, Dropout,  Flatten, Conv3D,  MaxPooling3D
 from keras.optimizers import Adam
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_memory_growth(gpus[0], True)
@@ -21,12 +15,12 @@ from concurrent.futures import ThreadPoolExecutor
 from memory import AgentMemory
 
 class PongAgent:
-    def __init__(self, train, max_games, vision=False):
+    def __init__(self, train, max_games):
         self.train = train
         self.memory = AgentMemory()
         self.epsilon = 0.99 if train else 0.0
         self.decay = MIN_EPSILON**(1/max_games)
-        self.model = self._build_model() if not vision else self._build_vision_model()
+        self.model = self._build_model()
         self.target_model = clone_model(self.model)
         self.stats = {
             'train_loss': [],
@@ -47,31 +41,9 @@ class PongAgent:
         model.add(Dense(units, activation=ACTIVATION))
         model.add(Dropout(DROPOUT_RATE))
 
-    def _build_model(self, hidden_layers=LAYERS) -> Sequential:
+    def _build_model(self) -> Sequential:
         model = Sequential()
-        
-        # Input layer
-        model.add(Dense(hidden_layers[0], input_dim=INPUT_SIZE, activation=ACTIVATION))
-        model.add(Dropout(DROPOUT_RATE))
-        
-        # Hidden layers
-        for units in hidden_layers[1:]:
-            self.dense_block(model, units)
-        
-        # Output layer
-        model.add(Dense(ACTION_SIZE, activation=OUTPUT_ACTIV))
-        
-        model.compile(
-            loss=LOSS_FUNC, 
-            optimizer=Adam(learning_rate=LEARNING_RATE),
-            metrics=[METRIC]
-        )
-        model.summary(100)
-        return model
-
-    def _build_vision_model(self) -> Sequential:
-        model = Sequential()
-        kernels = 128
+        kernels = 64
         
         # 3D Convolution block
         model.add(Conv3D(kernels, kernel_size=(17,9,3), strides=(7,3,1), activation=ACTIVATION, padding='same', input_shape=INPUT_SHAPE))
@@ -87,10 +59,10 @@ class PongAgent:
         model.add(Flatten())
         
         # Dense layers
-        units = 4**5
-        for _ in range(2):
+        units = 2**9
+        for _ in range(3):
             self.dense_block(model, int(units))
-            units //= 4
+            units //= 2
         
         # Output layer
         model.add(Dense(ACTION_SIZE, activation=OUTPUT_ACTIV))
