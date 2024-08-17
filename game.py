@@ -181,15 +181,17 @@ class Game:
         self.nn = config.get('nn', 0)
         self.num_obs = config.get('obstacles', 0)
         self.slow_mo = config.get('slow', False)
+        self.games = config.get('num_games', 5)
         self.cur_game = 1
-        self.games = config.get('num_games', 1)
+        
         if self.nn:
             self.train = config.get('training', False)
-            self.save = False if not self.nn else config.get('save_prog', False)
+            self.save = False if not self.train else config.get('save_prog', True)
+            
+            self.num_matches = config.get('matches', 15)
+            self.num_sets = config.get('sets', 10)
             self.cur_match = 0
             self.cur_set = 0
-            self.num_matches = config.get('matches', 5)
-            self.num_sets = config.get('sets', 2)
             self.total_games = self.games * self.num_matches * self.num_sets
         else:
             self.train = False
@@ -572,22 +574,20 @@ class Game:
                 self.run()
                 #self.nn = match_set % 2 + 1
                 self.nn_model.update_target()
-            #if self.num_obs > 0:
-            #self.add_obstacle()
+            if match == self.num_matches:
+                self.add_obstacle()
         self.end()
 
-
+MODE = 0
 if __name__ == "__main__":
-    conf = {
-        'nn': 2,
-        'training': True,
-        'save_prog': True,
-        'num_games': 5,
-        'matches': 10,
-        'sets': 10,
-        'obstacles': 2
-    }
-    #conf = {'players':  2, 'nn':0, 'num_games': 5, 'obstacles':0, 'slow':True}
+    if MODE == 0: # train
+        conf = {'nn': 2, 'training': True}
+    elif MODE == 1: # test
+        conf = {'num_games': 5, 'slow':True}
+    else: # play
+        conf = {'players': 1, 'nn': 1}
+
+    print(conf)
     Game(**conf)
 
 

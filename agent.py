@@ -18,7 +18,7 @@ class PongAgent:
     def __init__(self, train, max_games):
         self.train = train
         self.memory = AgentMemory()
-        self.epsilon = 0.99 if train else 0.0
+        self.epsilon = 0.995 if train else 0.0
         self.decay = MIN_EPSILON**(1/max_games)
         self.model = self._build_model()
         self.target_model = clone_model(self.model)
