@@ -45,8 +45,10 @@ class Ball:
             self.vx /= abs(self.vx) / 4
         
         # Ball out of bounds       
-        if (self.y < 0 and self.vy < 0) or (self.y > SCREEN_HEIGHT and self.vy > 0):
-            self.vy *= -1
+        #if (self.y - self.r < 0 and self.vy < 0) or (self.y + self.r > SCREEN_HEIGHT-1 and self.vy > 0):
+        #    self.vy *= -1
+
+        self.x = min(SCREEN_WIDTH, max(0, self.x))
 
     def velocity(self):
         return math.hypot(self.vx, self.vy)
@@ -78,19 +80,24 @@ class Obstacle:
         self.vx = random.choice([-3, -2, 2, 3])
 
     def collides(self, other):
-        return distance(self, other) < (self.r + other.r)
+        return distance(self, other) <= (self.r + other.r)
 
     def move(self):
         self.y += self.vy
         self.x += self.vx
 
+        #if abs(self.vx) < 2:
+            #self.vx = 2/(self.vx+1e-5)
+
+        if self.vx > BALL_MAX_SPEED:
+            self.vx = BALL_MAX_SPEED
+        if self.vy > BALL_MAX_SPEED:
+            self.vy = BALL_MAX_SPEED
+
         self.vy *= check_bounds(self.y - self.r, 0, self.vy, False) #check too low
-        self.vy *= check_bounds(self.y + self.r, SCREEN_HEIGHT, self.vy) # check too high
+        self.vy *= check_bounds(self.y + self.r, SCREEN_HEIGHT-1, self.vy) # check too high
         self.vx *= check_bounds(self.x - self.r, MID_WIDTH - OBSTACLE_SPREAD, self.vx, False) #check too far left
         self.vx *= check_bounds(self.x + self.r, MID_WIDTH + OBSTACLE_SPREAD, self.vx) #check too far right
-
-        if self.vx < 2:
-            self.vx /= (abs(self.vx)/2)
 
     def velocity(self):
         return math.hypot(self.vx, self.vy)
@@ -98,7 +105,7 @@ class Obstacle:
     def draw(self, screen):
         pygame.draw.circle(screen, BLACK, (self.last[0], self.last[1]), self.r)
         pygame.draw.circle(screen, RED, (self.x, self.y), OBSTACLE_RADIUS)
-        pygame.draw.circle(screen, BLACK, (self.x, self.y), 10)
+        pygame.draw.circle(screen, WHITE, (self.x, self.y), 10)
         self.last = (self.x, self.y)
 
 class Paddle:
@@ -122,9 +129,13 @@ class Paddle:
         self.x = self.base_x
 
     def collides(self, other):
-        return distance(self, other) < (self.r + other.r)
+        return distance(self, other) <= (self.r + other.r)
 
     def move(self):
+        if abs(self.vx) > PADDLE_VEL:
+            self.vx /= 2
+        if abs(self.vy) > PADDLE_VEL:
+            self.vy /= 2
         self.y += self.vy
         self.x += self.vx
         self.y = max(self.r, min(SCREEN_HEIGHT - self.r, self.y))
@@ -133,6 +144,7 @@ class Paddle:
     def draw(self, screen):
         pygame.draw.circle(screen, BLACK, (self.last[0], self.last[1]), self.r)
         pygame.draw.circle(screen, self.color if not self.hit else RED, (self.x, self.y), PADDLE_RADIUS)
-        pygame.draw.circle(screen, BLACK, (self.x, self.y), 5)
+        pygame.draw.circle(screen, WHITE, (self.x, self.y), 5)
         self.last = (self.x, self.y)
-
+        if self.hit:
+            self.hit = False

@@ -1,4 +1,5 @@
 import yaml, math
+from global_vars import STATE_SPLIT
 
 def load_conf(name: str):
     with open(f'./configs/{name}.yml', 'r') as file:
@@ -19,7 +20,6 @@ def check_bounds(pos, limit, velo, g=True):
         if pos < limit and velo < 0:
             return -1
     return 1
-
 
 def collide(obj1, obj2, momentum_factor=1.2, size_speed_factor=1.2, min_speed=2.0, max_speed=15):
     diff = distance(obj1, obj2)
@@ -69,6 +69,9 @@ def bresenham_line(x0, y0, x1, y1):
 
     return points
 
+def sigmoid(x):
+    return 1 / (1 + math.exp(-x))
+
 def interpolate_color(value, min_val, max_val, color1, color2):
     """Interpolate between two colors based on the normalized value."""
     ratio = (value - min_val) / (max_val - min_val) if min_val != max_val else 0.5
@@ -77,3 +80,15 @@ def interpolate_color(value, min_val, max_val, color1, color2):
         int(color1[1] * ratio + color2[1] * (1 - ratio)),
         int(color1[2] * ratio + color2[2] * (1 - ratio))
     )
+
+def norm_c(v, d, t, neg=False):
+    base = (v / d)
+    if neg:
+        base = 0.5 + base / 2
+        base = max(0.0, min(1.0,base))
+    return t(base)
+
+def get_obj_state_repr(obj, o_type, max_v):
+    loc = (0, norm_c(obj.x, STATE_SPLIT, int), norm_c(obj.y, STATE_SPLIT, int))
+    rep = [norm_c(obj.vx, max_v, float, 1), norm_c(obj.vy, max_v, float, 1), o_type/4]
+    return loc, rep

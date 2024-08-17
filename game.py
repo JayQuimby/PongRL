@@ -1,7 +1,13 @@
 import pygame as pg
 import numpy as np
+import random
 from global_vars import *
-from utils import bresenham_line, interpolate_color
+from utils import (
+    bresenham_line, 
+    interpolate_color, 
+    sigmoid, 
+    get_obj_state_repr
+)
 from objects import Ball, Paddle, Obstacle
 from agent import PongAgent
 from utils import load_conf, distance, collide
@@ -38,12 +44,11 @@ class GameDisplay:
         self.fps = 100 if not game.train else 1000
         if game.slow_mo:
             self.game_rate = 1
-            self.ui_rate = 5
+            self.ui_rate = 1
             self.fps = 10
         self.screen = pg.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT + UI_SIZE))
         pg.display.set_caption('Self play simulation')
         self.clock = pg.time.Clock()
-        
 
         pg.font.init()
         self.font = pg.font.Font(None, 28)
@@ -84,13 +89,13 @@ class GameDisplay:
                 ])
             
             loss_vals = self.game.nn_model.stats['train_loss']
-            self.blit_text(self.create_dense_plot(loss_vals, colors=(GREEN, RED)), (250, SCREEN_HEIGHT + 40))
+            self.blit_text(self.create_dense_plot(loss_vals, colors=(RED, GREEN)), (250, SCREEN_HEIGHT + 40))
 
             if len(loss_vals) >  0:
                 variables.extend([
-                    (f'{round(max(loss_vals)*100, 2)}% -', self.small_font, (190, SCREEN_HEIGHT + 40), WHITE),
-                    (f'{METRIC}', self.small_font, (180, SCREEN_HEIGHT + 40 + 25), YELLOW),
-                    (f'{round(min(loss_vals)*100,2)}% -', self.small_font, (190, SCREEN_HEIGHT + 30 + PLOT_HEIGHT), WHITE),
+                    (f'{round(max(loss_vals), 4)} -', self.small_font, (190, SCREEN_HEIGHT + 40), WHITE),
+                    (f'{METRIC[:min(len(METRIC), 15)]}', self.small_font, (MID_WIDTH - OBSTACLE_SPREAD, SCREEN_HEIGHT + 109), YELLOW),
+                    (f'{round(min(loss_vals),4)} -', self.small_font, (190, SCREEN_HEIGHT + 30 + PLOT_HEIGHT), WHITE),
                 ])
             
             plt_offset = SCREEN_WIDTH - PLOT_WIDTH - 210
@@ -100,7 +105,7 @@ class GameDisplay:
             if len(w_l) >  0:
                 variables.extend([
                     (f'{round(max(w_l)*100,2)}% -', self.small_font, (plt_offset-50, SCREEN_HEIGHT + 40), WHITE),
-                    (f'Win/Loss', self.small_font, (plt_offset-70, SCREEN_HEIGHT+40+25), YELLOW),
+                    (f'Win/Loss', self.small_font, (MID_WIDTH + OBSTACLE_SPREAD - 70, SCREEN_HEIGHT+109), YELLOW),
                     (f'{round(min(w_l)*100,2)}% -', self.small_font, (plt_offset-50, SCREEN_HEIGHT + 30 + PLOT_HEIGHT), WHITE),
                 ])
 
@@ -174,14 +179,23 @@ class Game:
         self.nn = config.get('nn', 0)
         self.num_obs = config.get('obstacles', 0)
         self.slow_mo = config.get('slow', False)
+        self.cur_game = 1
+        self.games = config.get('num_games', 1)
         if self.nn:
             self.train = config.get('training', False)
             self.save = False if not self.nn else config.get('save_prog', False)
             self.cur_match = 0
             self.cur_set = 0
+            self.num_matches = config.get('matches', 5)
+            self.num_sets = config.get('sets', 2)
+            self.total_games = self.games * self.num_matches * self.num_sets
+            self.vision = config.get('vision', True)
+            self.state_func = self.get_vec_grid if self.vision else self.get_linear_state
+            
         else:
+            self.state_func = self.get_vec_grid
             self.train = False
-        self.games = config.get('num_games', 1)
+        
         self.read_out = GameDisplay(self)
         self.ball = Ball(b_conf)
         
@@ -198,10 +212,11 @@ class Game:
         for _ in range(self.num_obs):
             self.add_obstacle()
 
-        self.cur_state = [self.get_state(0), self.get_state(1)]
+        self.cur_state = self.get_whole_state()
+        
         self.nn_model = None
         if self.nn:
-            self.nn_model = PongAgent(self.train, self.games)
+            self.nn_model = PongAgent(self.train, self.total_games, self.vision)
         self.running = True
 
         self.win_loss = {
@@ -209,16 +224,25 @@ class Game:
             'p2_wins': 0,
             'w_l': []
         }
-
-        if self.train:
-            self.train_model()
-        else:
-            self.run()
-        pg.quit()
-
+        if not config.get('jupyter', False):
+            if self.train:
+                self.train_model()
+            else:
+                self.run()
+        
     def add_obstacle(self):
         new_o = Obstacle(o_conf)
         self.obstacles.append(new_o)
+
+    def apply_action(self, rev, action):
+        if action[0]:  # Up
+            self.paddles[rev].vy -= PADDLE_VEL
+        if action[1]:  # Down
+            self.paddles[rev].vy += PADDLE_VEL
+        if action[2]:  # Left
+            self.paddles[rev].vx -= PADDLE_VEL #* -1 if rev else 1
+        if action[3]:  # Right
+            self.paddles[rev].vx += PADDLE_VEL #* -1 if rev else 1
 
     def get_player_moves(self, keys):
         # Paddle movement
@@ -230,12 +254,10 @@ class Game:
             left_right = (-keys[pg.K_a] + keys[pg.K_d])
             
             if up_down or left_right:
-                act[0] = up_down > 0  # Move up
-                act[1] = up_down < 0  # Move dow
-                act[2] = left_right > 0  # Move left
-                act[3] = left_right < 0  # Move right
-                self.paddles[0].vy += PADDLE_VEL * up_down
-                self.paddles[0].vx += PADDLE_VEL * left_right
+                act[1] = up_down > 0  # Move up
+                act[0] = up_down < 0  # Move dow
+                act[3] = left_right > 0  # Move left
+                act[2] = left_right < 0  # Move right
             if not any(act[:4]):
                 act[4] = 1  # None
             actions.append(act)
@@ -250,15 +272,55 @@ class Game:
                 act[1] = up_down < 0  # Move dow
                 act[2] = left_right > 0  # Move left
                 act[3] = left_right < 0  # Move right
-                self.paddles[0].vy += PADDLE_VEL * up_down
-                self.paddles[0].vx += PADDLE_VEL * left_right
             if not any(act[:4]):
                 act[4] = 1  # None
             actions.append(act)
 
         return actions
 
-    def get_state(self, rev=False):
+    def get_vec_grid(self, rev=False):
+
+        def add_box(img, locate, rad, val, delim=STATE_SPLIT):
+            offset = int(rad // delim)
+            off_2 = offset // 2
+            # Calculate the square boundaries, ensuring they stay within array limits
+            x_start = locate[1] - offset
+            x_end = locate[1] + offset
+            y_start = locate[2] - offset
+            y_end = locate[2] + offset
+            # left and right split for OBOB
+            img[:, x_start: locate[1], y_start: y_end, :] = val
+            img[:, locate[1]: x_end, y_start: y_end, :] = val
+
+            # right box
+            img[:, x_end: x_end + off_2, y_start + off_2: y_end - off_2, :] = val
+            # left box
+            img[:, x_start - off_2: max(0,x_start), y_start + off_2: y_end - off_2, :] = val
+            # left top/bot box
+            img[:, x_start + off_2: locate[1], y_start - off_2: y_end + off_2, :] = val
+            # right top/bot box
+            img[:, locate[1]:x_end - off_2 , y_start - off_2: y_end + off_2, :] = val
+                        
+            return img
+
+        state_space = np.zeros((1, SCREEN_WIDTH//STATE_SPLIT, SCREEN_HEIGHT//STATE_SPLIT, 3))
+        normalizer = 1.4
+        loc, val = get_obj_state_repr(self.ball, 4, BALL_MAX_SPEED)
+        state_space = add_box(state_space, loc, self.ball.r/normalizer, val)
+
+        pads = self.paddles[::-1] if rev else self.paddles
+        for i, p in enumerate(pads):
+            ot = 1 if i else 2
+            loc, val = get_obj_state_repr(p, ot, PADDLE_VEL)
+            state_space = add_box(state_space, loc, p.r/normalizer, val)
+        
+        for ob in self.obstacles:
+            loc, val = get_obj_state_repr(ob, 3, BALL_MAX_SPEED)
+            state_space = add_box(state_space, loc, ob.r/normalizer, val)
+        
+        return state_space
+
+    def get_linear_state(self, rev=False):
         inputs = []
         paddle, op_paddle = self.paddles[::-1] if rev else self.paddles
         # Ball position and velocity
@@ -289,83 +351,64 @@ class Game:
         return np.reshape(inputs, [1, len(inputs)])
 
     def get_whole_state(self):
-        return [self.get_state(0), self.get_state(1)]
+        return [self.state_func(0), self.state_func(1)]
 
     def get_ai_moves(self):
         bh = self.ball.y
         vl = self.ball.vy
-        fbh = bh + vl**2
-        buffer = PADDLE_RADIUS // 8
-        follow = lambda x: PADDLE_VEL * (-(x + buffer > fbh) + (x -  buffer < fbh))
-        center = lambda x: PADDLE_VEL * min(1, max(-1, (MID_HEIGHT - x)//10))
+        fbh = bh + vl*10
+        buffer = PADDLE_RADIUS // 4
+        follow = lambda x: (-(x - buffer > fbh) + (x + buffer < fbh)) > 0
+        center = lambda x: min(1, max(-1, (MID_HEIGHT - x)//20)) > 0
 
-        def update_paddle(rev, direction, x_condition, follow_action, center_action):
+        def update_paddle(rev, direction, x_condition, follow_action=follow, center_action=center):
             act = [0 for _ in range(5)]
             paddle = self.paddles[rev]
             if x_condition:
+                if self.train and random.random() < self.nn_model.epsilon:
+                    ind = random.randint(0, 4)
+                    act[ind] = 1
+                    return act
                 fdy = follow_action(paddle.y)
-                act[0] = 1 if fdy > 0 else 0
-                act[1] = 1 if fdy < 0 else 0
-                paddle.vy += fdy
-                if distance(paddle, self.ball) < paddle.r * 3:
-                    adx = PADDLE_VEL // 2 * direction
-                    act[2] = 1 if adx < 0 else 0
-                    act[3] = 1 if adx > 0 else 0
-                    paddle.vx += adx
+                act[1] = fdy
+                act[0] = not fdy
+
+                if distance(paddle, self.ball) < paddle.r * 2:
+                    adx = direction < 0
+                    act[2] = adx
+                    act[3] = not adx
+
             else:
                 ddy = center_action(paddle.y)
-                ddx = PADDLE_VEL * direction
-                act[0] = 1 if ddy > 0 else 0
-                act[1] = 1 if ddy < 0 else 0
-                act[2] = 1 if ddx < 0 else 0
-                act[3] = 1 if ddx > 0 else 0
-                paddle.vx -= ddx
-                paddle.vy += ddy
+                ddx = direction < 0
+                act[1] = ddy
+                act[0] = not ddy
+                act[3] = ddx 
+                act[2] = not ddx 
+
             act[-1] = sum(act) == 0
             return act
 
         def nn_play(rev=False):
-            model_input = self.get_state(rev)
-            action = self.nn_model(model_input)
-            paddle = self.paddles[rev]
-            if action[0]:  # Up
-                paddle.vy -= PADDLE_VEL
-            if action[1]:  # Down
-                paddle.vy += PADDLE_VEL
-            if action[2]:  # Left
-                paddle.vx -= PADDLE_VEL #* -1 if rev else 1
-            if action[3]:  # Right
-                paddle.vx += PADDLE_VEL #* -1 if rev else 1
-            return action
+            return self.nn_model(self.state_func(rev))          
 
         bot_actions = []
         if self.players == 0:
             if self.nn == 0: 
-                bot_actions.append(update_paddle(0, 1, self.ball.vx < 0 and self.ball.x < MID_WIDTH, follow, center))
-                bot_actions.append(update_paddle(1, -1, self.ball.vx > 0 and self.ball.x > MID_WIDTH, follow, center))
+                bot_actions.append(update_paddle(0, 1, self.ball.vx <= 0))
+                bot_actions.append(update_paddle(1, -1, self.ball.vx >= 0))
             elif self.nn == 1:
-                bot_actions.append(nn_play(0))
-                bot_actions.append(update_paddle(1, -1, self.ball.vx > 0 and self.ball.x > MID_WIDTH, follow, center))
+                bot_actions.append(update_paddle(0, 1, self.ball.vx <= 0))
+                bot_actions.append(nn_play(1))
             else:
-                bot_actions.extend([nn_play(x) for x in range(2)])
-                '''right = MID_WIDTH + OBSTACLE_SPREAD
-                left = MID_WIDTH - OBSTACLE_SPREAD
-                if self.ball.x < right:
-                    bot_actions.append(nn_play(0))
-                if self.ball.x > left:
-                    bot_actions.append(nn_play(1))
-                if len(bot_actions) < 2:
-                    if self.ball.x > right:
-                        bot_actions.insert(0, NULL_ACT)
-                    else:
-                        bot_actions.append(NULL_ACT)'''
+                bot_actions.extend([nn_play(0), nn_play(1)])
 
         elif self.players == 1:
             if self.nn > 0:
                 bot_actions.append(nn_play(1))
             else:
-                bot_actions.append(update_paddle(1, -1, self.ball.vx > 0 and self.ball.x > MID_WIDTH, follow, center))
-        
+                bot_actions.extend(update_paddle(1, -1, self.ball.vx >= 0))
+
         return bot_actions
     
     def resistance(self):
@@ -390,36 +433,63 @@ class Game:
         if self.players < 2: 
             bot_moves = self.get_ai_moves()
 
-        self.paddles[0].move()
-        self.paddles[1].move()
+        all_moves = player_moves + bot_moves
+        for i, mv in enumerate(all_moves):
+            self.apply_action(i, mv)
+
+        for p in self.paddles:
+            p.move()
+        
         self.ball.move()
 
         for obs in self.obstacles:
             obs.move()
-        return player_moves + bot_moves
+        
+        return all_moves
     
     def reward_func(self, p1s, p1w, p2s, p2w):
+        def calculate_paddle_reward(paddle, ball):
+            norm_dist = (ball.y - paddle.y) / SCREEN_HEIGHT
+            y_alignment = -abs(norm_dist)
+            correct_direction = sigmoid(paddle.vy * norm_dist) - 0.2
+            x_alignment = MISS_PENALTY * ((ball.x - paddle.x) if paddle.x < MID_WIDTH else (paddle.x - ball.x)) / MID_WIDTH
+            return y_alignment + correct_direction + x_alignment
+
+        def calculate_hit_reward(paddle, ball):
+            if not paddle.hit:
+                return 0
+            
+            hit_direction = 1 if not ((paddle.x < MID_WIDTH) ^ (ball.vx > 0)) else -1
+            hit_position = (abs(paddle.y - ball.y) / paddle.r) + 0.5
+            return HIT_REWARD * hit_direction * hit_position
+
         score_factor = SCORE_REWARD_MULT * (p1s - p2s)
         win_factor = WIN_REWARD * (p1w - p2w)
         base_reward = score_factor + win_factor
-        rewards = [[base_reward], [-base_reward]]
-        cur_hit_reward = HIT_REWARD * abs(self.ball.vx)
 
-        for i, pad in enumerate(self.paddles):
-            if i == 0: # left paddle
-                rewards[i].append(MISS_PENALTY if self.ball.x < pad.x else 0.6)
-                rewards[i].append(0 if not pad.hit or not self.ball.vx > 0 else cur_hit_reward)
-            else: # right paddle
-                rewards[i].append(MISS_PENALTY if self.ball.x > pad.x else 0.6) #(pad.x - self.ball.x)/SCREEN_WIDTH
-                rewards[i].append(0 if not pad.hit or not self.ball.vx < 0 else cur_hit_reward)
-                
-            rewards[i].append(-abs(pad.y - self.ball.y)/SCREEN_HEIGHT)
-        
-        return [sum(r) for r in rewards]
+        rewards = []
+        for i, paddle in enumerate(self.paddles):
+            paddle_reward = calculate_paddle_reward(paddle, self.ball)
+            hit_reward = calculate_hit_reward(paddle, self.ball)
+            
+            # Calculate distance-based reward
+            dist = distance(paddle, self.ball)
+            distance_reward = 0.5 - min(1, dist / SCREEN_WIDTH)
+            
+            # Calculate anticipation reward
+            time_to_intercept = min(50, abs((dist-paddle.r) / (abs(self.ball.vx) + 1e-6))) # Adding small value to avoid division by zero
+            anticipation_reward = sigmoid(MAX_ANTICIPATION_TIME - time_to_intercept)
+            
+            # Combine all rewards
+            total_reward = paddle_reward + hit_reward + anticipation_reward + distance_reward 
+            total_reward += -base_reward if i else base_reward
+            rewards.append(total_reward)
+
+        return rewards
 
     def check_for_score(self, score):
-        p1_score = self.ball.x > SCREEN_WIDTH
-        p2_score = self.ball.x < 0
+        p1_score = self.ball.x == SCREEN_WIDTH
+        p2_score = self.ball.x == 0
         p1_win = False
         p2_win = False
         ns = self.get_whole_state()
@@ -456,8 +526,6 @@ class Game:
                     self.ball.vx *= -1 if self.ball.vx > 0 and self.ball.x < paddle.x else 1
                 else:
                     self.ball.vx *= -1 if self.ball.vx < 0 and self.ball.x > paddle.x else 1
-            else:
-                paddle.hit = False
 
     def detect_collision(self, score):
         self.obstacle_collision()
@@ -485,8 +553,11 @@ class Game:
         self.read_out.update_display(score, rewards)
         return score, rewards, moves, next_state
 
+    def end(self):
+        pg.quit()
+
     def run(self):
-        for game_num in range(self.games):
+        for game_num in range(1, self.games + 1):
             self.cur_game = game_num
             score = {'p1': 0, 'p2': 0}
 
@@ -494,10 +565,10 @@ class Game:
                 score, rewards, actions, next_state = self.step(score)
                 
                 if self.train:
-                    for x in [0, 1]:
+                    for x in list(range(2)):
                         self.nn_model.remember(self.cur_state[x], actions[x], rewards[x], next_state[x], self.running)
                     self.cur_state = next_state
-
+            
             if score['p1'] == MAX_SCORE:
                 self.win_loss['p1_wins'] += 1
             else:
@@ -506,30 +577,41 @@ class Game:
 
             self.new_game()
             if self.train:
-                self.nn_model.replay(3)
-        if self.train and self.save:
-            self.nn_model.replay(1)
-            self.nn_model.reset_mem()
-            self.nn_model.save(MODEL_PATH)
+                self.nn_model.replay(0.2)
+                self.nn_model.apply_decay()
+
+        if self.train:
+            self.nn_model.reset()
+            if self.save:
+                self.nn_model.save(MODEL_PATH)
+        else:
+            self.end()
     
     def train_model(self):
-        for match in range(10):
+        for match in range(1, self.num_matches+1):
             self.cur_match = match
-            for match_set in range(2):
+            for match_set in range(1, self.num_sets+1):
                 self.cur_set = match_set
-                self.nn = match_set + 1
                 self.run()
-            if self.num_obs > 0:
-                self.add_obstacle()
+                self.nn = match_set % 2 + 1
+                self.nn_model.update_target()
+            #if self.num_obs > 0:
+            #self.add_obstacle()
+        self.end()
+
 
 if __name__ == "__main__":
     conf = {
-        'nn': 1,
+        'nn': 2,
         'training': True,
         'save_prog': True,
-        'num_games': 100
+        'num_games': 5,
+        'matches': 10,
+        'sets': 10,
+        'vision': True,
+        'obstacles': 2
     }
-    #conf = {'players': 1,'nn': 1}#, 'slow':True}
+    #conf = {'players':  1, 'nn':1, 'vision':True, 'num_games': 5, 'obstacles':0}#, 'slow':True}
     Game(**conf)
 
 
