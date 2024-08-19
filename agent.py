@@ -18,7 +18,7 @@ class PongAgent:
     def __init__(self, train, max_games):
         self.train = train
         self.memory = AgentMemory()
-        self.epsilon = 0.995 if train else 0.0
+        self.epsilon = 0.55 if train else 0.0
         self.decay = MIN_EPSILON**(1/max_games)
         self.model = self._build_model()
         self.target_model = clone_model(self.model)
@@ -48,6 +48,7 @@ class PongAgent:
         # 3D Convolution block
         model.add(Conv3D(kernels, kernel_size=(17,9,3), strides=(7,3,1), activation=ACTIVATION, padding='same', input_shape=INPUT_SHAPE))
         model.add(MaxPooling3D(pool_size=(3,3,1), strides=(1,1,1)))
+        model.add(Dropout(DROPOUT_RATE))
         
         kernels *= 2
         self.conv_block(model, kernels, (7,7,3), (2,2,1), (3,3,1), (2,2,1), DROPOUT_RATE)
@@ -60,9 +61,9 @@ class PongAgent:
         
         # Dense layers
         units = 2**11
-        for _ in range(4):
+        for _ in range(3):
             self.dense_block(model, int(units))
-            units //= 2
+            units //= 4
         
         # Output layer
         model.add(Dense(ACTION_SIZE, activation=OUTPUT_ACTIV))
@@ -81,9 +82,8 @@ class PongAgent:
     def __call__(self, state):
         self.step_itter()
         act = [0,0,0,0,0]
-        rand = random.random()
-        if rand < self.epsilon:
-            if rand > self.epsilon / 2.5:
+        if random.random() < self.epsilon:
+            if random.random() > self.epsilon / 2.5:
                 act[random.randint(0, 4)] = 1
             else:
                 act = self.last_act
@@ -105,18 +105,25 @@ class PongAgent:
         next_states = np.vstack(next_states)
 
         # Get Q-values for current states and next_states
-        current_qv = self.model.predict(states, verbose=0) # Nx5
-        future = self.target_model.predict(next_states, verbose=0) # Nx5
+        target = self.model.predict(states, verbose=0) # Nx5
+        q_val = self.target_model.predict(next_states, verbose=0) # Nx5
         
-        future_qv = rewards + GAMMA * np.max(future, axis=1) * (1 - np.array(dones))
+        # This is the Q-Value update step where we are approximating the current reward and future rewards
+        # Rewards is given by the state of the board at next_state
+        # The discount factor increases as time goes on so the values learned over time get more important
+        # The Q-Value gets compounded more into the future as epsilon decreases
+        # GG - if the next_state was a game over there is no q_val for the future
+        #       |  R  | + |Dis| * |       Q Val       | * |         GG        |
+        q_val = rewards + GAMMA * np.max(q_val, axis=1) * (1 - np.array(dones))
         
         # Update Q-values for the actions taken
-        for q, fq, a in zip(current_qv, future_qv, actions):
+        for t, q, a in zip(target, q_val, actions):
             i = np.argmax(a)
-            q[i] *= (1-Q_VAL_RATIO)
-            q[i] += Q_VAL_RATIO * fq
+            # weight the update value based on current and next state prediction
+            t[i] *= (1-Q_VAL_RATIO)
+            t[i] += Q_VAL_RATIO * q
 
-        return states, current_qv
+        return states, target
 
     def replay(self, percent):
         num_memories = int(len(self.memory) * percent)

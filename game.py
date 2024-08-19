@@ -188,8 +188,8 @@ class Game:
             self.train = config.get('training', False)
             self.save = False if not self.train else config.get('save_prog', True)
             
-            self.num_matches = config.get('matches', 15)
-            self.num_sets = config.get('sets', 10)
+            self.num_matches = config.get('matches', 10)
+            self.num_sets = config.get('sets', 7)
             self.cur_match = 0
             self.cur_set = 0
             self.total_games = self.games * self.num_matches * self.num_sets
@@ -238,13 +238,13 @@ class Game:
 
     def apply_action(self, rev, action):
         if action[0]:  # Up
-            self.paddles[rev].vy -= PADDLE_VEL
+            self.paddles[rev].vy -= PADDLE_VEL * -1 if rev else 1
         if action[1]:  # Down
-            self.paddles[rev].vy += PADDLE_VEL
+            self.paddles[rev].vy += PADDLE_VEL * -1 if rev else 1
         if action[2]:  # Left
-            self.paddles[rev].vx -= PADDLE_VEL #* -1 if rev else 1
+            self.paddles[rev].vx -= PADDLE_VEL * -1 if rev else 1
         if action[3]:  # Right
-            self.paddles[rev].vx += PADDLE_VEL #* -1 if rev else 1
+            self.paddles[rev].vx += PADDLE_VEL * -1 if rev else 1
 
     def get_player_moves(self, keys):
         # Paddle movement
@@ -312,14 +312,15 @@ class Game:
 
         pads = self.paddles[::-1] if rev else self.paddles
         for i, p in enumerate(pads):
-            ot = 3 if i else 1
+            ot = 1 if i else 3
             loc, val = get_obj_state_repr(p, ot, PADDLE_VEL)
             state_space = add_box(state_space, loc, p.r/normalizer, val)
         
         for ob in self.obstacles:
             loc, val = get_obj_state_repr(ob, 2, BALL_MAX_SPEED)
             state_space = add_box(state_space, loc, ob.r/normalizer, val)
-        
+        if rev:
+            state_space = state_space[:, ::-1, ::-1, :]
         return state_space
 
     def get_whole_state(self):
@@ -362,7 +363,7 @@ class Game:
             return act
 
         def nn_play(rev=False):
-            return self.nn_model(self.get_state(rev))          
+            return self.nn_model(self.cur_state[rev])     
 
         bot_actions = []
         if self.players == 0:
@@ -373,13 +374,14 @@ class Game:
                 bot_actions.append(update_paddle(0, 1, self.ball.vx <= 0))
                 bot_actions.append(nn_play(1))
             else:
-                bot_actions.extend([nn_play(0), nn_play(1)])
+                bot_actions.append(nn_play(0))
+                bot_actions.append(nn_play(1))
 
         elif self.players == 1:
             if self.nn > 0:
                 bot_actions.append(nn_play(1))
             else:
-                bot_actions.extend(update_paddle(1, -1, self.ball.vx >= 0))
+                bot_actions.append(update_paddle(1, -1, self.ball.vx >= 0))
 
         return bot_actions
     
@@ -456,12 +458,16 @@ class Game:
         for i, paddle in enumerate(self.paddles):
             reward = -base_reward if i else base_reward
             # Calculate distance-based reward
-            dist = distance(paddle, self.ball)
-            reward += 0.5 - min(1, dist / SCREEN_WIDTH)
-            time_to_intercept = min(200, abs((dist-paddle.r) / (abs(self.ball.vx) + 1e-6)))
-            reward += calculate_paddle_reward(paddle, self.ball, time_to_intercept)
-            reward += calculate_hit_reward(paddle, self.ball)
-            
+            dist = distance(paddle, self.ball) 
+            norm_dist = dist / SCREEN_WIDTH
+            if not (i ^ (self.ball.vx > 0)):
+                reward += 0.5 - min(1, norm_dist)
+                time_to_intercept = min(200, abs((dist-paddle.r) / (abs(self.ball.vx) + 1e-6)))
+                reward += calculate_paddle_reward(paddle, self.ball, time_to_intercept)
+                reward += calculate_hit_reward(paddle, self.ball)
+            else:
+                reward += abs(paddle.x - self.ball.x)/SCREEN_WIDTH
+                reward -= abs(paddle.y - MID_HEIGHT)/MID_HEIGHT
             rewards.append(reward)
 
         return rewards
@@ -562,7 +568,7 @@ class Game:
         if self.train:
             self.nn_model.reset()
             if self.save:
-                self.nn_model.save(MODEL_PATH)
+                self.nn_model.save(SAVE_PATH)
         else:
             self.end()
     
@@ -581,7 +587,7 @@ class Game:
 MODE = 0
 if __name__ == "__main__":
     if MODE == 0: # train
-        conf = {'nn': 2, 'training': True}
+        conf = {'nn': 1, 'training': True}
     elif MODE == 1: # test
         conf = {'num_games': 5, 'slow':True}
     else: # play
