@@ -74,7 +74,7 @@ The above image shows an example of a training run with the agent playing agains
 Visualization for this project is done via a Jupyter notebook and some scripts that look into a simulated game. Take a look at `Visualize.ipynb` for a detailed look.
 
 <div align="center">
-  <img src="assets/input_layer.png" alt="Centered Image" width="auto"/>
+  <img src="assets/layer.png" alt="Centered Image" width="auto"/>
 </div>
 The above are the visualized input layer weights. you can read this similar to a velocity map since the colors encode the velocity of any object at any location. There are some interesting patterns that arise.
 
