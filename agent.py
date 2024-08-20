@@ -18,7 +18,7 @@ class PongAgent:
     def __init__(self, train, max_games):
         self.train = train
         self.memory = AgentMemory()
-        self.epsilon = 0.55 if train else 0.0
+        self.epsilon = 0.95 if train else 0.0
         self.decay = MIN_EPSILON**(1/max_games)
         self.model = self._build_model()
         self.target_model = clone_model(self.model)
@@ -30,7 +30,6 @@ class PongAgent:
             self.load(BASE_PATH)
         self.step = 0
         self.thread_pool = ThreadPoolExecutor(max_workers=os.cpu_count())
-        self.last_act = [0,0,0,0,1]
 
     def conv_block(self, model, filters, kernel_size, k_stride, pool_size, p_stride, dropout_rate=DROPOUT_RATE):
         model.add(Conv3D(filters, kernel_size, strides=k_stride, activation=ACTIVATION, padding='same'))
@@ -43,27 +42,24 @@ class PongAgent:
 
     def _build_model(self) -> Sequential:
         model = Sequential()
-        kernels = 128
+        kernels = 32
         
         # 3D Convolution block
         model.add(Conv3D(kernels, kernel_size=(17,9,3), strides=(7,3,1), activation=ACTIVATION, padding='same', input_shape=INPUT_SHAPE))
         model.add(MaxPooling3D(pool_size=(3,3,1), strides=(1,1,1)))
         model.add(Dropout(DROPOUT_RATE))
         
-        kernels *= 2
         self.conv_block(model, kernels, (7,7,3), (2,2,1), (3,3,1), (2,2,1), DROPOUT_RATE)
-        
-        kernels //= 2
         self.conv_block(model, kernels, (3,3,3), (2,2,1), (3,3,1), (1,1,1), DROPOUT_RATE)
         
         # Flatten the 3D tensor
         model.add(Flatten())
         
         # Dense layers
-        units = 2**11
+        units = 2**8
         for _ in range(3):
             self.dense_block(model, int(units))
-            units //= 4
+            units //= 2
         
         # Output layer
         model.add(Dense(ACTION_SIZE, activation=OUTPUT_ACTIV))
@@ -73,7 +69,7 @@ class PongAgent:
             optimizer=Adam(learning_rate=LEARNING_RATE),
             metrics=[METRIC]
         )
-        model.summary(100)
+        #model.summary(100)
         return model
 
     def remember(self, state, action, reward, next_state, done):
@@ -83,16 +79,9 @@ class PongAgent:
         self.step_itter()
         act = [0,0,0,0,0]
         if random.random() < self.epsilon:
-            if random.random() > self.epsilon / 2.5:
-                act[random.randint(0, 4)] = 1
-            else:
-                act = self.last_act
+            act[random.randint(0, 4)] = 1
         else:
-            if self.step == 0:
-                act[np.argmax(self._optimized_predict(state))] = 1
-            else:
-                act = self.last_act
-        self.last_act = act
+            act[np.argmax(self._optimized_predict(state))] = 1
         return act
 
     @tf.function
@@ -169,9 +158,9 @@ class PongAgent:
     def reset(self):
         #self.memory.clear()
         self.step = 0
-        self.last_act = [0,0,0,0,0]
 
     def load(self, name):
+        print('loading from save')
         self.model.load_weights(name)
 
     def save(self, name):

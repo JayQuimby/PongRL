@@ -88,7 +88,9 @@ def norm_c(v, d, t, neg=False):
         base = max(0.0, min(1.0,base))
     return t(base)
 
-def get_obj_state_repr(obj, o_type, max_v):
+def get_obj_state_repr(obj, o_type, max_v, rev=0):
     loc = (0, norm_c(obj.x, STATE_SPLIT, int), norm_c(obj.y, STATE_SPLIT, int))
-    rep = [norm_c(obj.vx, max_v, float, 1), norm_c(obj.vy, max_v, float, 1), o_type/4]
+    vx = obj.vx * (-1 if rev else 1)
+    vy = obj.vy * (-1 if rev else 1)
+    rep = [norm_c(vx, max_v, float, 1), norm_c(vy, max_v, float, 1), o_type/4]
     return loc, rep

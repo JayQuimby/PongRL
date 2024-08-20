@@ -189,7 +189,7 @@ class Game:
             self.save = False if not self.train else config.get('save_prog', True)
             
             self.num_matches = config.get('matches', 10)
-            self.num_sets = config.get('sets', 7)
+            self.num_sets = config.get('sets', 10)
             self.cur_match = 0
             self.cur_set = 0
             self.total_games = self.games * self.num_matches * self.num_sets
@@ -238,13 +238,13 @@ class Game:
 
     def apply_action(self, rev, action):
         if action[0]:  # Up
-            self.paddles[rev].vy -= PADDLE_VEL * -1 if rev else 1
+            self.paddles[rev].vy -= PADDLE_VEL * (-1 if rev else 1)
         if action[1]:  # Down
-            self.paddles[rev].vy += PADDLE_VEL * -1 if rev else 1
+            self.paddles[rev].vy += PADDLE_VEL * (-1 if rev else 1)
         if action[2]:  # Left
-            self.paddles[rev].vx -= PADDLE_VEL * -1 if rev else 1
+            self.paddles[rev].vx -= PADDLE_VEL * (-1 if rev else 1)
         if action[3]:  # Right
-            self.paddles[rev].vx += PADDLE_VEL * -1 if rev else 1
+            self.paddles[rev].vx += PADDLE_VEL * (-1 if rev else 1)
 
     def get_player_moves(self, keys):
         # Paddle movement
@@ -307,17 +307,17 @@ class Game:
 
         state_space = np.zeros((1, SCREEN_WIDTH//STATE_SPLIT, SCREEN_HEIGHT//STATE_SPLIT, 3))
         normalizer = 1.4
-        loc, val = get_obj_state_repr(self.ball, 4, BALL_MAX_SPEED)
+        loc, val = get_obj_state_repr(self.ball, 4, BALL_MAX_SPEED, rev)
         state_space = add_box(state_space, loc, self.ball.r/normalizer, val)
 
         pads = self.paddles[::-1] if rev else self.paddles
         for i, p in enumerate(pads):
             ot = 1 if i else 3
-            loc, val = get_obj_state_repr(p, ot, PADDLE_VEL)
+            loc, val = get_obj_state_repr(p, ot, PADDLE_VEL, rev)
             state_space = add_box(state_space, loc, p.r/normalizer, val)
         
         for ob in self.obstacles:
-            loc, val = get_obj_state_repr(ob, 2, BALL_MAX_SPEED)
+            loc, val = get_obj_state_repr(ob, 2, BALL_MAX_SPEED, rev)
             state_space = add_box(state_space, loc, ob.r/normalizer, val)
         if rev:
             state_space = state_space[:, ::-1, ::-1, :]
@@ -358,6 +358,14 @@ class Game:
                 act[0] = not ddy
                 act[3] = ddx 
                 act[2] = not ddx 
+            
+            if rev:
+                tmp = act[0]
+                act[0] = act[1]
+                act[1] = tmp
+                tmp = act[2]
+                act[2] = act[3]
+                act[3] = tmp
 
             act[-1] = sum(act) == 0
             return act
@@ -466,8 +474,8 @@ class Game:
                 reward += calculate_paddle_reward(paddle, self.ball, time_to_intercept)
                 reward += calculate_hit_reward(paddle, self.ball)
             else:
-                reward += abs(paddle.x - self.ball.x)/SCREEN_WIDTH
-                reward -= abs(paddle.y - MID_HEIGHT)/MID_HEIGHT
+                reward += abs(paddle.x - self.ball.x) / SCREEN_WIDTH
+                reward -= abs(paddle.y - MID_HEIGHT) / MID_HEIGHT
             rewards.append(reward)
 
         return rewards
@@ -578,16 +586,16 @@ class Game:
             for match_set in range(1, self.num_sets+1):
                 self.cur_set = match_set
                 self.run()
-                #self.nn = match_set % 2 + 1
+                self.nn = match_set % 2 + 1
                 self.nn_model.update_target()
-            if match == self.num_matches:
-                self.add_obstacle()
+            #if match == self.num_matches:
+            #    self.add_obstacle()
         self.end()
 
 MODE = 0
 if __name__ == "__main__":
     if MODE == 0: # train
-        conf = {'nn': 1, 'training': True}
+        conf = {'nn': 2, 'training': True}
     elif MODE == 1: # test
         conf = {'num_games': 5, 'slow':True}
     else: # play
