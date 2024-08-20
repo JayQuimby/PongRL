@@ -8,14 +8,7 @@
 - [Visualization](#Visualization)
 
 ## Demo
-<div align="center">
-    <video width="700" controls>
-        <source src="assets/train.mp4" type="video/mp4">
-        Your browser does not support the video tag.
-    </video>
-</div>
-
-
+https://github.com/user-attachments/assets/cd31e141-70a7-4623-b5c3-3f5423535c02
 
 ## Introduction
 
