@@ -14,7 +14,7 @@ PLOT_WIDTH = 300
 # sample rates
 UI_SAMPLE_RATE = 30
 SCREEN_SAMPLE_RATE = 2
-MODEL_SAMPLE_RATE = 2
+MODEL_SAMPLE_RATE = 4
 
 # Colors
 WHITE = (255, 255, 255)
@@ -44,8 +44,8 @@ OBSTACLE_RADIUS = min(SCREEN_WIDTH // 22, SCREEN_HEIGHT // 22)
 OBSTACLE_SPREAD = SCREEN_WIDTH // 4
 
 # AI settings:
-SAVE_PATH = './models/pong_agent.h5'
-BASE_PATH = './models/trained_agent.h5'
+SAVE_PATH = './models/train_agent.h5'
+LOAD_PATH = './models/base_agent.h5'
 
 # rewards
 MAX_ANTICIPATION_TIME = 5
@@ -65,11 +65,11 @@ STATE_SPLIT = 5
 
 GAMMA = 0.8
 DROPOUT_RATE = 0.1
-LEARNING_RATE = 7e-4
+LEARNING_RATE = 1e-6
 Q_VAL_RATIO = 0.7
 BATCH_SIZE = 2**5
 MEMORY_SIZE = BATCH_SIZE * 2**8
-MIN_EPSILON = 0.6
+MIN_EPSILON = 0.7
 
 METRIC = 'mae'
 ACTIVATION = 'relu'

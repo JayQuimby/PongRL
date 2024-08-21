@@ -39,8 +39,9 @@ def timer(func):
 class GameDisplay:
     def __init__(self, game):
         self.game = game
-        self.game_rate = SCREEN_SAMPLE_RATE * (5 if game.train else 1)
-        self.ui_rate = UI_SAMPLE_RATE * (3 if game.train else 1)
+        render_skipping = game.train
+        self.game_rate = SCREEN_SAMPLE_RATE * (5 if render_skipping else 1)
+        self.ui_rate = UI_SAMPLE_RATE * (3 if render_skipping else 1)
         self.fps = 100 if not game.train else 1000
 
         if game.slow_mo:
@@ -431,32 +432,28 @@ class Game:
     
     def reward_func(self, p1s, p1w, p2s, p2w):
         def calculate_paddle_reward(paddle, ball, ticks):
-            r = 0
-            if ticks < 200:
-                delta = ball.vy * ticks
-                future = ball.y + delta
-                while not 0 < future < SCREEN_HEIGHT:
-                    if future < ball.r:
-                        future = abs(future)
-                    elif future > SCREEN_HEIGHT - ball.r:
-                        future = SCREEN_HEIGHT - (future - SCREEN_HEIGHT)
-            else:
-                future = ball.y
-
+            reward = 0
+            delta = ball.vy * ticks
+            future = ball.y + delta
+            while not 0 < future < SCREEN_HEIGHT:
+                if future < ball.r:
+                    future = abs(future - ball.r)
+                elif future > SCREEN_HEIGHT - ball.r:
+                    future = (SCREEN_HEIGHT - ball.r) - (future - SCREEN_HEIGHT + ball.r)
+            
             norm_dist = (future - paddle.y) / SCREEN_HEIGHT
             if norm_dist < paddle.r * 2:
-                r += sigmoid(MAX_ANTICIPATION_TIME - ticks)
-            r += -abs(norm_dist)
-            r += sigmoid(paddle.vy * norm_dist) - 0.5
-            r += MISS_PENALTY * ((ball.x - paddle.x) if paddle.x < MID_WIDTH else (paddle.x - ball.x)) / SCREEN_WIDTH
-            return r
+                reward += sigmoid(MAX_ANTICIPATION_TIME - min(MAX_ANTICIPATION_TIME, ticks))
+            reward += -abs(norm_dist)
+            reward += sigmoid(paddle.vy * norm_dist) - 0.5
+            reward += MISS_PENALTY * ((ball.x - paddle.x) if paddle.x < MID_WIDTH else (paddle.x - ball.x)) / SCREEN_WIDTH
+            return reward
 
         def calculate_hit_reward(paddle, ball):
             if not paddle.hit:
                 return 0
             hit_direction = 2 * (not ((paddle.x < MID_WIDTH) ^ (ball.vx > 0))) - 1
-            hit_position = (abs(paddle.y - ball.y) / paddle.r) + 0.5
-            return HIT_REWARD * hit_direction * hit_position
+            return HIT_REWARD * hit_direction
 
         score_factor = SCORE_REWARD_MULT * (p1s - p2s)
         win_factor = WIN_REWARD * (p1w - p2w)
@@ -470,7 +467,7 @@ class Game:
             norm_dist = dist / SCREEN_WIDTH
             if not (i ^ (self.ball.vx > 0)):
                 reward += 0.5 - min(1, norm_dist)
-                time_to_intercept = min(200, abs((dist-paddle.r) / (abs(self.ball.vx) + 1e-6)))
+                time_to_intercept = int(abs((dist-paddle.r) / (abs(self.ball.vx) + 1e-6)))
                 reward += calculate_paddle_reward(paddle, self.ball, time_to_intercept)
                 reward += calculate_hit_reward(paddle, self.ball)
             else:
@@ -586,7 +583,7 @@ class Game:
             for match_set in range(1, self.num_sets+1):
                 self.cur_set = match_set
                 self.run()
-                self.nn = match_set % 2 + 1
+                #self.nn = match_set % 2 + 1
                 self.nn_model.update_target()
             #if match == self.num_matches:
             #    self.add_obstacle()
@@ -597,7 +594,9 @@ if __name__ == "__main__":
     if MODE == 0: # train
         conf = {'nn': 2, 'training': True}
     elif MODE == 1: # test
-        conf = {'num_games': 5, 'slow':True}
+        conf = {'nn': 2,'num_games': 5, 'slow':True}
+    elif MODE == 2: # watch
+        conf = {'nn': 2,'num_games': 5}
     else: # play
         conf = {'players': 1, 'nn': 1}
 

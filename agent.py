@@ -18,7 +18,7 @@ class PongAgent:
     def __init__(self, train, max_games):
         self.train = train
         self.memory = AgentMemory()
-        self.epsilon = 0.95 if train else 0.0
+        self.epsilon = 0.0 if train else 0.0
         self.decay = MIN_EPSILON**(1/max_games)
         self.model = self._build_model()
         self.target_model = clone_model(self.model)
@@ -26,8 +26,8 @@ class PongAgent:
             'train_loss': [],
             'win_rate': []
         }
-        if os.path.exists(BASE_PATH):
-            self.load(BASE_PATH)
+        if os.path.exists(LOAD_PATH):
+            self.load(LOAD_PATH)
         self.step = 0
         self.thread_pool = ThreadPoolExecutor(max_workers=os.cpu_count())
 
