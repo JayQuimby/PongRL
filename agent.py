@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 from keras.models import Sequential, clone_model
-from keras.layers import Dense, Dropout,  Flatten, Conv3D,  MaxPooling3D
+from keras.layers import Dense, Dropout, Flatten, Conv3D, MaxPooling3D
 from keras.optimizers import Adam
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_memory_growth(gpus[0], True)
@@ -18,25 +18,29 @@ class PongAgent:
     def __init__(self, train, max_games):
         self.train = train
         self.memory = AgentMemory()
-        self.epsilon = 0.0 if train else 0.0
-        self.decay = MIN_EPSILON**(1/max_games)
+        self.epsilon = BASE_EPSILON if train else 0.0
+        if train:
+            self.decay = MIN_EPSILON**(self.epsilon/max_games)
+            self.thread_pool = ThreadPoolExecutor(max_workers=os.cpu_count())
+
         self.model = self._build_model()
         self.target_model = clone_model(self.model)
         self.stats = {
             'train_loss': [],
             'win_rate': []
         }
+        
         if os.path.exists(LOAD_PATH):
             self.load(LOAD_PATH)
         self.step = 0
-        self.thread_pool = ThreadPoolExecutor(max_workers=os.cpu_count())
+        
 
-    def conv_block(self, model, filters, kernel_size, k_stride, pool_size, p_stride, dropout_rate=DROPOUT_RATE):
+    def _conv_block(self, model, filters, kernel_size, k_stride, pool_size, p_stride, dropout_rate=DROPOUT_RATE):
         model.add(Conv3D(filters, kernel_size, strides=k_stride, activation=ACTIVATION, padding='same'))
         model.add(MaxPooling3D(pool_size=pool_size, strides=p_stride))
         model.add(Dropout(dropout_rate))
 
-    def dense_block(self, model, units):
+    def _dense_block(self, model, units):
         model.add(Dense(units, activation=ACTIVATION))
         model.add(Dropout(DROPOUT_RATE))
 
@@ -49,8 +53,8 @@ class PongAgent:
         model.add(MaxPooling3D(pool_size=(3,3,1), strides=(1,1,1)))
         model.add(Dropout(DROPOUT_RATE))
         
-        self.conv_block(model, kernels, (7,7,3), (2,2,1), (3,3,1), (2,2,1), DROPOUT_RATE)
-        self.conv_block(model, kernels, (3,3,3), (2,2,1), (3,3,1), (1,1,1), DROPOUT_RATE)
+        self._conv_block(model, kernels, (7,7,3), (2,2,1), (3,3,1), (2,2,1), DROPOUT_RATE)
+        self._conv_block(model, kernels, (3,3,3), (2,2,1), (3,3,1), (1,1,1), DROPOUT_RATE)
         
         # Flatten the 3D tensor
         model.add(Flatten())
@@ -58,22 +62,16 @@ class PongAgent:
         # Dense layers
         units = 2**8
         for _ in range(3):
-            self.dense_block(model, int(units))
+            self._dense_block(model, int(units))
             units //= 2
         
         # Output layer
         model.add(Dense(ACTION_SIZE, activation=OUTPUT_ACTIV))
-        
-        model.compile(
-            loss=LOSS_FUNC, 
-            optimizer=Adam(learning_rate=LEARNING_RATE),
-            metrics=[METRIC]
-        )
-        #model.summary(100)
-        return model
 
-    def remember(self, state, action, reward, next_state, done):
-        self.memory.remember((state, action, reward, next_state, done))#.append()
+        optim = Adam(learning_rate=LEARNING_RATE)
+        model.compile(loss=LOSS_FUNC, optimizer=optim, metrics=[METRIC])
+        
+        return model
 
     def __call__(self, state):
         self.step_itter()
@@ -146,7 +144,10 @@ class PongAgent:
             loss = self.model.fit(all_states, all_targets, epochs=1, verbose=0, batch_size=BATCH_SIZE)
             losses.extend(loss.history[METRIC])
         self.stats['train_loss'].append(sum(losses)/len(losses))
-        
+
+    def remember(self, state, action, reward, next_state, done):
+        self.memory.remember((state, action, reward, next_state, done))
+
     def apply_decay(self):
         if self.train and self.epsilon > MIN_EPSILON:
             self.epsilon *= self.decay
@@ -160,7 +161,6 @@ class PongAgent:
         self.step = 0
 
     def load(self, name):
-        print('loading from save')
         self.model.load_weights(name)
 
     def save(self, name):

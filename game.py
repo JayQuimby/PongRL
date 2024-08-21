@@ -435,15 +435,15 @@ class Game:
             reward = 0
             delta = ball.vy * ticks
             future = ball.y + delta
+            top_lim = SCREEN_HEIGHT - ball.r
             while not 0 < future < SCREEN_HEIGHT:
                 if future < ball.r:
-                    future = abs(future - ball.r)
-                elif future > SCREEN_HEIGHT - ball.r:
-                    future = (SCREEN_HEIGHT - ball.r) - (future - SCREEN_HEIGHT + ball.r)
+                    future = abs(future) + ball.r
+                elif future > top_lim:
+                    future = top_lim - (future - top_lim)
             
+            #pg.draw.circle(self.read_out.screen, RED, (self.ball.x + self.ball.vx*ticks, future), 5)
             norm_dist = (future - paddle.y) / SCREEN_HEIGHT
-            if norm_dist < paddle.r * 2:
-                reward += sigmoid(MAX_ANTICIPATION_TIME - min(MAX_ANTICIPATION_TIME, ticks))
             reward += -abs(norm_dist)
             reward += sigmoid(paddle.vy * norm_dist) - 0.5
             reward += MISS_PENALTY * ((ball.x - paddle.x) if paddle.x < MID_WIDTH else (paddle.x - ball.x)) / SCREEN_WIDTH
@@ -453,7 +453,7 @@ class Game:
             if not paddle.hit:
                 return 0
             hit_direction = 2 * (not ((paddle.x < MID_WIDTH) ^ (ball.vx > 0))) - 1
-            return HIT_REWARD * hit_direction
+            return HIT_REWARD * hit_direction * (abs(ball.velocity())/BALL_MAX_SPEED)
 
         score_factor = SCORE_REWARD_MULT * (p1s - p2s)
         win_factor = WIN_REWARD * (p1w - p2w)
@@ -467,8 +467,8 @@ class Game:
             norm_dist = dist / SCREEN_WIDTH
             if not (i ^ (self.ball.vx > 0)):
                 reward += 0.5 - min(1, norm_dist)
-                time_to_intercept = int(abs((dist-paddle.r) / (abs(self.ball.vx) + 1e-6)))
-                reward += calculate_paddle_reward(paddle, self.ball, time_to_intercept)
+                time_delta = abs(self.ball.x - paddle.x)/abs(self.ball.vx)
+                reward += calculate_paddle_reward(paddle, self.ball, time_delta)
                 reward += calculate_hit_reward(paddle, self.ball)
             else:
                 reward += abs(paddle.x - self.ball.x) / SCREEN_WIDTH
@@ -557,7 +557,8 @@ class Game:
                 if self.train:
                     for x in list(range(2)):
                         self.nn_model.remember(self.cur_state[x], actions[x], rewards[x], next_state[x], self.running)
-                    self.cur_state = next_state
+                
+                self.cur_state = next_state
             
             if score['p1'] == MAX_SCORE:
                 self.win_loss['p1_wins'] += 1
@@ -591,13 +592,20 @@ class Game:
 
 MODE = 0
 if __name__ == "__main__":
-    if MODE == 0: # train
-        conf = {'nn': 2, 'training': True}
-    elif MODE == 1: # test
+    # train
+    if MODE == 0: 
+        conf = {'nn': 1, 'training': True}
+
+    # test
+    elif MODE == 1: 
         conf = {'nn': 2,'num_games': 5, 'slow':True}
-    elif MODE == 2: # watch
+
+    # watch
+    elif MODE == 2: 
         conf = {'nn': 2,'num_games': 5}
-    else: # play
+
+    # play
+    else: 
         conf = {'players': 1, 'nn': 1}
 
     print(conf)

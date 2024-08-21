@@ -41,12 +41,8 @@ class Ball:
             self.vx /= abs(self.vx)
             self.vy /= abs(self.vy)
         
-        if self.vx < 4:
+        if abs(self.vx) < 4:
             self.vx /= abs(self.vx) / 4
-        
-        # Ball out of bounds       
-        #if (self.y - self.r < 0 and self.vy < 0) or (self.y + self.r > SCREEN_HEIGHT-1 and self.vy > 0):
-        #    self.vy *= -1
 
         self.x = min(SCREEN_WIDTH, max(0, self.x))
 
