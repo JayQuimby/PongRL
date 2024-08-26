@@ -35,8 +35,9 @@ python game.py --mode x
 
 Modes:
 - 0: Training mode
-- 1: Self play mode - non-training
-- 2: Human vs. Ai
+- 1: Slow Motion
+- 2: Ai vs Ai
+- -1: Human vs. Ai (Default)
 
 ## Training
 The training of the network happens over the course of about 1000 games. This is not required but shows good convergence in solutions. During the training phase the agent will switch back and forth between playing against itself, and playing a hand crafted solution.
