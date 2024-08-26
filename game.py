@@ -445,7 +445,7 @@ class Game:
             #pg.draw.circle(self.read_out.screen, RED, (self.ball.x + self.ball.vx*ticks, future), 5)
             norm_dist = (future - paddle.y) / SCREEN_HEIGHT
             reward += -abs(norm_dist)
-            reward += sigmoid(paddle.vy * norm_dist) - 0.5
+            #reward += sigmoid(paddle.vy * norm_dist) - 0.5
             reward += MISS_PENALTY * ((ball.x - paddle.x) if paddle.x < MID_WIDTH else (paddle.x - ball.x)) / SCREEN_WIDTH
             return reward
 
@@ -453,7 +453,7 @@ class Game:
             if not paddle.hit:
                 return 0
             hit_direction = 2 * (not ((paddle.x < MID_WIDTH) ^ (ball.vx > 0))) - 1
-            return HIT_REWARD * hit_direction * (abs(ball.velocity())/BALL_MAX_SPEED)
+            return HIT_REWARD * hit_direction #* (abs(ball.velocity())/BALL_MAX_SPEED)
 
         score_factor = SCORE_REWARD_MULT * (p1s - p2s)
         win_factor = WIN_REWARD * (p1w - p2w)
@@ -463,16 +463,16 @@ class Game:
         for i, paddle in enumerate(self.paddles):
             reward = -base_reward if i else base_reward
             # Calculate distance-based reward
-            dist = distance(paddle, self.ball) 
-            norm_dist = dist / SCREEN_WIDTH
+            #dist = distance(paddle, self.ball) 
+            #norm_dist = dist / SCREEN_WIDTH
             if not (i ^ (self.ball.vx > 0)):
-                reward += 0.5 - min(1, norm_dist)
-                time_delta = abs(self.ball.x - paddle.x)/abs(self.ball.vx)
-                reward += calculate_paddle_reward(paddle, self.ball, time_delta)
+                #reward += 0.5 - min(1, norm_dist)
+                time_delta = abs(self.ball.x - (paddle.x))/abs(self.ball.vx)
+                reward += calculate_paddle_reward(paddle, self.ball, time_delta-(60/abs(self.ball.vx)))
                 reward += calculate_hit_reward(paddle, self.ball)
-            else:
-                reward += abs(paddle.x - self.ball.x) / SCREEN_WIDTH
-                reward -= abs(paddle.y - MID_HEIGHT) / MID_HEIGHT
+            #else:
+            #    reward += abs(paddle.x - self.ball.x) / SCREEN_WIDTH
+            #    reward -= abs(paddle.y - MID_HEIGHT) / MID_HEIGHT
             rewards.append(reward)
 
         return rewards
@@ -590,11 +590,11 @@ class Game:
             #    self.add_obstacle()
         self.end()
 
-MODE = 0
+MODE = -1
 if __name__ == "__main__":
     # train
     if MODE == 0: 
-        conf = {'nn': 1, 'training': True}
+        conf = {'nn': 2, 'training': True}
 
     # test
     elif MODE == 1: 
