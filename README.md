@@ -30,7 +30,7 @@ pip install -r requirements.txt
 Run the Game
 
 ```bash
-python game.py --mode x
+python run.py --mode x
 ```
 
 Modes:
