@@ -1,7 +1,7 @@
 import pygame as pg
 import numpy as np
 import random
-from global_vars import *
+from static import *
 from utils import (
     bresenham_line, 
     interpolate_color, 

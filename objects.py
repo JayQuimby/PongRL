@@ -2,7 +2,7 @@ import pygame
 import random
 import math
 from utils import distance, check_bounds
-from global_vars import *
+from static import *
 
 class Ball:
     def __init__(self, config):

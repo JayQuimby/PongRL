@@ -1,6 +1,6 @@
 import math
 import random
-from global_vars import *
+from static import *
 
 class AgentMemory:
     def __init__(self) -> None:

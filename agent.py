@@ -1,16 +1,18 @@
 import numpy as np
 import tensorflow as tf
 from keras.models import Sequential, clone_model
-from keras.layers import Dense, Dropout, Flatten, Conv3D, MaxPooling3D
-from keras.optimizers import Adam
+from keras.layers import Dense, Dropout, Flatten, Conv3D, MaxPooling3D, Input
+from keras.optimizers import AdamW
 gpus = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_memory_growth(gpus[0], True)
-from keras import mixed_precision
-policy = mixed_precision.Policy('mixed_float16')
-mixed_precision.set_global_policy(policy)
+
+if gpus:
+    tf.config.experimental.set_memory_growth(gpus[0], True)
+    from keras import mixed_precision
+    policy = mixed_precision.Policy('mixed_float16')
+    mixed_precision.set_global_policy(policy)
 import random
 import os
-from global_vars import *
+from static import *
 from concurrent.futures import ThreadPoolExecutor
 from memory import AgentMemory
 
@@ -46,29 +48,32 @@ class PongAgent:
 
     def _build_model(self) -> Sequential:
         model = Sequential()
-        kernels = 32
+        model.add(Input(shape=INPUT_SHAPE))
         
-        # 3D Convolution block
-        model.add(Conv3D(kernels, kernel_size=(17,9,3), strides=(7,3,1), activation=ACTIVATION, padding='same', input_shape=INPUT_SHAPE))
-        model.add(MaxPooling3D(pool_size=(3,3,1), strides=(1,1,1)))
+        # More efficient progression
+        model.add(Conv3D(32, (17,9,3), strides=(7,3,1), activation=ACTIVATION, padding='same'))
+        model.add(MaxPooling3D((3,3,1), strides=(2,2,1)))
         model.add(Dropout(DROPOUT_RATE))
         
-        self._conv_block(model, kernels, (7,7,3), (2,2,1), (3,3,1), (2,2,1), DROPOUT_RATE)
-        self._conv_block(model, kernels, (3,3,3), (2,2,1), (3,3,1), (1,1,1), DROPOUT_RATE)
+        model.add(Conv3D(64, (7,7,3), strides=(2,2,1), activation=ACTIVATION, padding='same'))
+        model.add(MaxPooling3D((3,3,1), strides=(2,2,1)))
+        model.add(Dropout(DROPOUT_RATE))
         
-        # Flatten the 3D tensor
+        model.add(Conv3D(64, (3,3,3), strides=(2,2,1), activation=ACTIVATION, padding='same'))
+        model.add(MaxPooling3D((2,2,1)))
+        model.add(Dropout(DROPOUT_RATE))
+        
         model.add(Flatten())
         
-        # Dense layers
-        units = 2**8
-        for _ in range(3):
-            self._dense_block(model, int(units))
-            units //= 2
+        # Simpler dense layers (RL typically doesn't need huge dense layers)
+        model.add(Dense(512, activation=ACTIVATION))
+        model.add(Dropout(DROPOUT_RATE))
+        model.add(Dense(256, activation=ACTIVATION))
+        model.add(Dropout(DROPOUT_RATE))
         
-        # Output layer
         model.add(Dense(ACTION_SIZE, activation=OUTPUT_ACTIV))
-
-        optim = Adam(learning_rate=LEARNING_RATE)
+        
+        optim = AdamW(learning_rate=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
         model.compile(loss=LOSS_FUNC, optimizer=optim, metrics=[METRIC])
         
         return model
@@ -167,5 +172,5 @@ class PongAgent:
         self.model.save_weights(name)
 
     def update_target(self):
-        self.target_model = clone_model(self.model)
+        self.target_model.set_weights(self.model.get_weights())
 
