@@ -1,11 +1,10 @@
 import pygame as pg
 import numpy as np
 import random
-from global_vars import *
+from static import *
 from utils import (
     bresenham_line, 
     interpolate_color, 
-    sigmoid, 
     get_obj_state_repr
 )
 from objects import Ball, Paddle, Obstacle

@@ -44,8 +44,10 @@ OBSTACLE_RADIUS = min(SCREEN_WIDTH // 22, SCREEN_HEIGHT // 22)
 OBSTACLE_SPREAD = SCREEN_WIDTH // 4
 
 # AI settings:
-SAVE_PATH = './models/train_agent.h5'
-LOAD_PATH = './models/base_agent.h5'
+# SAVE_PATH = './models/train_agent.h5'
+SAVE_PATH = './models/train_agent.pth'
+LOAD_PATH = './models/base_agent.pth'
+# LOAD_PATH = './models/base_agent.h5'
 
 # rewards
 MAX_ANTICIPATION_TIME = 5
@@ -65,6 +67,7 @@ STATE_SPLIT = 5
 
 GAMMA = 0.8
 DROPOUT_RATE = 0.1
+WEIGHT_DECAY=3.0
 LEARNING_RATE = 5e-5
 Q_VAL_RATIO = 0.7
 BATCH_SIZE = 2**5

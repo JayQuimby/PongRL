@@ -1,5 +1,5 @@
 import yaml, math
-from global_vars import STATE_SPLIT
+from static import STATE_SPLIT
 
 def load_conf(name: str):
     with open(f'./configs/{name}.yml', 'r') as file:
