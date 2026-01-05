@@ -1,0 +1,97 @@
+# Game setup and UI
+SCREEN_WIDTH = 1400
+SCREEN_HEIGHT = 600
+MID_WIDTH = SCREEN_WIDTH // 2
+MID_HEIGHT = SCREEN_HEIGHT // 2
+UI_SIZE = 125
+STAT_BAR_OFFSET = 10
+REWARD_OFFSET = 80
+
+#plot settings
+PLOT_HEIGHT = 65
+PLOT_WIDTH = 300
+
+# sample rates
+UI_SAMPLE_RATE = 30
+SCREEN_SAMPLE_RATE = 2
+MODEL_SAMPLE_RATE = 4
+
+# Colors
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+RED = (255, 0, 0)
+GREEN = (0, 255, 0)
+BLUE = (50, 50, 255)
+YELLOW = (255,255,0)
+GRAY = (50, 50, 50)
+PLT_COLOR = (76,0,153)
+
+# Game settings
+MAX_SCORE = 10
+
+# ball settings
+BALL_RADIUS = max(SCREEN_HEIGHT, SCREEN_WIDTH) // 100
+BALL_MAX_SPEED = 11
+BALL_COLOR = (215,35,245)
+
+# paddle settings
+PADDLE_RADIUS = SCREEN_HEIGHT // 10
+PADDLE_VEL = 6
+PADDLE_MOVE_DECAY = 0.95
+
+# obstacle settings
+OBSTACLE_RADIUS = min(SCREEN_WIDTH // 22, SCREEN_HEIGHT // 22)
+OBSTACLE_SPREAD = SCREEN_WIDTH // 4
+
+# AI settings:
+# SAVE_PATH = './models/train.tiny'
+SAVE_PATH = './models/train.pth'
+LOAD_PATH = './models/check.pth'
+CHECKPOINT = './models/check.pth'
+# SAVE_PATH = './models/train_agent.weights.h5'
+# LOAD_PATH = './models/base_agent.h5'
+# LOAD_PATH = './models/train.tiny'
+# CHECKPOINT = './models/checkpoint.tiny'
+# LOAD_PATH = './models/train_agent.weights.h5'
+
+# rewards
+MAX_ANTICIPATION_TIME = 5
+MISS_PENALTY = 1.7
+HIT_REWARD = 1.0
+SCORE_REWARD_MULT = 0.7
+WIN_REWARD = 1.0
+MIN_REWARD_VAL = 0.05
+
+# actions
+NULL_ACT = [0,0,0,0,1]
+ACTION_SIZE = len(NULL_ACT)
+
+# Hyper params
+INPUT_SHAPE = [SCREEN_WIDTH//5, SCREEN_HEIGHT//5, 3, 1]
+STATE_SPLIT = 5
+
+# ORIGINAL SETUP
+# GAMMA = 0.8
+# DROPOUT_RATE = 0.1
+# WEIGHT_DECAY = 3.0
+# LEARNING_RATE = 5e-5
+# Q_VAL_RATIO = 0.7
+# BATCH_SIZE = 2**5
+# MEMORY_SIZE = BATCH_SIZE * 2**8
+# MIN_EPSILON = 0.3
+# BASE_EPSILON = 0.96
+
+GAMMA = 0.8
+DROPOUT_RATE = 0.1
+WEIGHT_DECAY = 3.0
+LEARNING_RATE = 1e-5
+Q_VAL_RATIO = 0.7
+BATCH_SIZE = 2**5
+MEMORY_SIZE = BATCH_SIZE * 2**8
+MIN_EPSILON = 0.7
+BASE_EPSILON = 0.98
+
+METRIC = 'mae'
+ACTIVATION = 'relu'
+OUTPUT_ACTIV = 'linear'
+LOSS_FUNC = 'huber'
