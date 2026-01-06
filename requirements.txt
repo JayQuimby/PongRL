@@ -3,3 +3,5 @@ numpy
 pygame
 PyYAML
 tensorflow
+tqdm
+torch
